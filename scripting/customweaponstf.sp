@@ -12,7 +12,7 @@
 #include <tf2attributes>
 #include <smlib>
 
-#define PLUGIN_VERSION "beta 4a"
+#define PLUGIN_VERSION "beta 5"
 
 public Plugin:myinfo = {
 	name = "Custom Weapons 2",
