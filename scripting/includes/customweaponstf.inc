@@ -32,6 +32,16 @@
  */
 forward Action:CustomWeaponsTF_OnAddAttribute(weapon, client, const String:attrib[], const String:plugin[], const String:value[]);
 
+/**
+ * Called when an equipped weapon is finished being spawned.
+ *
+ * @param weapon			Entity index of the weapon being equipped.
+ * @param client			Client index who is equipping this weapon.
+ *
+ * @return					Does nothing.
+ */
+forward Action:CustomWeaponsTF_OnWeaponSpawned(weapon, client);
+
 /*   _____ _      _____ ______ _   _ _______ _____ 
    / ____| |    |_   _|  ____| \ | |__   __/ ____|
   | |    | |      | | | |__  |  \| |  | | | (___  
