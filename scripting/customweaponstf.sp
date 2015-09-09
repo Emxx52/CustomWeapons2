@@ -12,18 +12,19 @@
 #include <tf2attributes>
 #include <smlib>
 
-#define PLUGIN_VERSION "beta 4a"
+#define PLUGIN_VERSION "beta 5"
 
 public Plugin:myinfo = {
-    name = "Custom Weapons 2",
-    author = "MasterOfTheXP, updated by 404 and Theray070696",
-    description = "Allows players to use custom-made weapons.",
-    version = PLUGIN_VERSION,
-    url = "http://mstr.ca/"
+	name = "Custom Weapons 2",
+	author = "MasterOfTheXP, updated by 404 and Theray070696",
+	description = "Allows players to use custom-made weapons.",
+	version = PLUGIN_VERSION,
+	url = "http://mstr.ca/"
 };
 
 new Handle:aItems[10][5];
 new Handle:fOnAddAttribute;
+new Handle:fOnWeaponGive;
 
 new TFClassType:BrowsingClass[MAXPLAYERS + 1];
 new BrowsingSlot[MAXPLAYERS + 1];
@@ -36,7 +37,11 @@ new Handle:hSavedWeapons[MAXPLAYERS + 1][10][5];
 new bool:OKToEquipInArena[MAXPLAYERS + 1];
 
 new bool:IsCustom[2049];
+
 //new String:LogName[2049][64];
+new String:WeaponName[2049][10][9][64];
+new String:WeaponDescription[2049][10][9][512];
+
 new Handle:CustomConfig[2049];
 new bool:HasCustomViewmodel[2049];
 new ViewmodelOfWeapon[2049];
@@ -70,6 +75,7 @@ new Handle:g_hSdkEquipWearable;
 public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 {
 	fOnAddAttribute = CreateGlobalForward("CustomWeaponsTF_OnAddAttribute", ET_Event, Param_Cell, Param_Cell, Param_String, Param_String, Param_String);
+	fOnWeaponGive = CreateGlobalForward("CustomWeaponsTF_OnWeaponSpawned", ET_Event, Param_Cell, Param_Cell);
 	
 	CreateNative("CusWepsTF_GetClientWeapon", Native_GetClientWeapon);
 	CreateNative("CusWepsTF_GetClientWeaponName", Native_GetClientWeaponName);
@@ -145,6 +151,7 @@ public OnClientPutInServer(client)
 	}
 	
 	SDKHook(client, SDKHook_WeaponSwitchPost, OnWeaponSwitch);
+	SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage);
 }
 
 public OnMapStart()
@@ -416,6 +423,12 @@ stock WeaponInfoMenu(client, TFClassType:class, slot, weapon, Float:delay = -1.0
 	BrowsingClass[client] = class;
 	BrowsingSlot[client] = slot;
 	LookingAtItem[client] = weapon;
+	
+	//WeaponName[client][class][slot] = Name;
+	//WeaponDescription[client][class][slot] = description;
+	
+	strcopy(WeaponName[client][class][slot], 64, Name);
+	strcopy(WeaponDescription[client][class][slot], 512, description);
 }
 public WeaponInfoHandler(Handle:menu, MenuAction:action, client, item)
 {
@@ -793,7 +806,9 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 		HasCustomSounds[ent] = true;
 	
 	IsCustom[ent] = true;
+	
 	//LogName[ent] = logName;
+	
 	CustomConfig[ent] = hConfig;
 	
 	if (makeActive && !StrEqual(baseClass, "tf_weapon_invis", false))
@@ -807,6 +822,12 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 	{
 		CreateTimer(0.1, Timer_SetHealth, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
 	}
+	
+	new Action:act = Plugin_Continue;
+	Call_StartForward(fOnWeaponGive);
+	Call_PushCell(ent);
+	Call_PushCell(client);
+	Call_Finish(act);
 	
 	return ent;
 }
@@ -919,39 +940,95 @@ public Action:Event_Hurt(Handle:event, const String:name[], bool:dontBroadcast)
 	if (attacker) OKToEquipInArena[attacker] = false;
 }
 
+public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damagetype, &weapon, Float:damageForce[3], Float:damagePosition[3], damagecustom)
+{
+	if(victim <= 0) return Plugin_Continue;
+	if(attacker <= 0) return Plugin_Continue;
+	
+	new Float:health = float(Entity_GetHealth(victim));
+	
+	if(health - damage <= 0)
+	{
+		// Get the slot
+		new slot = GetClientSlot(attacker);
+		decl String:strClassname[PLATFORM_MAX_PATH];
+		if(weapon > 0 && IsValidEdict(weapon))
+		{
+			GetEdictClassname(weapon, strClassname, sizeof(strClassname));
+			slot = GetWeaponSlot(strClassname);
+		} else
+		{
+			if(inflictor > 0 && !Client_IsValid(inflictor) && IsValidEdict(inflictor))
+			{
+				GetEdictClassname(inflictor, strClassname, sizeof(strClassname));
+				slot = GetWeaponSlot(strClassname);
+			}
+		}
+		
+		new TFClassType:class = TF2_GetPlayerClass(attacker);
+		
+		if (weapon != -1 && IsCustom[weapon])
+		{
+			new Handle:menu = CreateMenu(Menu_Death);
+			
+			SetMenuTitle(menu, "%s\n \n%s", WeaponName[attacker][class][slot], WeaponDescription[attacker][class][slot]);
+			AddMenuItem(menu, "exit", "Close");
+			SetMenuPagination(menu, MENU_NO_PAGINATION);
+			SetMenuExitButton(menu, false);
+			
+			DisplayMenu(menu, victim, 4);
+		} else
+		{
+			weapon = GetPlayerWeaponSlot(attacker, slot);
+			
+			if(weapon != -1 && IsCustom[weapon])
+			{
+				new Handle:menu = CreateMenu(Menu_Death);
+				
+				SetMenuTitle(menu, "%s\n \n%s", WeaponName[attacker][class][slot], WeaponDescription[attacker][class][slot]);
+				AddMenuItem(menu, "exit", "Close");
+				SetMenuPagination(menu, MENU_NO_PAGINATION);
+				SetMenuExitButton(menu, false);
+				
+				DisplayMenu(menu, victim, 4);
+			}
+		}
+	}
+	
+	return Plugin_Continue;
+}
+
 public Action:Event_Death(Handle:event, const String:name[], bool:dontBroadcast)
 {
 	new client = GetClientOfUserId(GetEventInt(event, "userid"));
-	//new attacker = GetClientOfUserId(GetEventInt(event, "attacker"));
 	if (!client) return;
-	/*if (attacker <= 0) return;
-	
-	new slot = GetClientSlot(attacker);
-    decl String:strClassname[PLATFORM_MAX_PATH];
-	if (attacker > 0 && !Client_IsValid(attacker) && IsValidEdict(attacker))
-	{
-		GetEdictClassname(attacker, strClassname, sizeof(strClassname));
-		slot = GetWeaponSlot(strClassname);
-	}
-	
-	new weapon = GetPlayerWeaponSlot(attacker, slot);
-    if (weapon == -1) return;
-	if (IsCustom[weapon] && LogName[weapon][0] != '\0')
-	{
-		SetEventString(event, "weapon_logclassname", LogName[weapon]);
-	}*/
 	
 	if (GetEventInt(event, "death_flags") & TF_DEATHFLAG_DEADRINGER) return;
 	
-	if (!GetConVarBool(cvarKillWearablesOnDeath)) return;
-	
 	new i = -1;
-	while ((i = FindEntityByClassname(i, "tf_wearable*")) != -1)
+	while ((i = FindEntityByClassname(i, "tf_wearable*")) != -1 && GetConVarBool(cvarKillWearablesOnDeath))
 	{
 		if (!tiedEntity[i]) continue;
 		if (client != GetEntPropEnt(i, Prop_Send, "m_hOwnerEntity")) continue;
 		if (GetEntProp(i, Prop_Send, "m_bDisguiseWearable")) continue;
 		AcceptEntityInput(i, "Kill");
+	}
+}
+
+public Menu_Death(Handle:menu, MenuAction:action, client, item)
+{
+	if(action == MenuAction_Select)
+	{
+		new String:info[32];
+		GetMenuItem(menu, item, info, sizeof(info));
+		
+		if(StrEqual(info, "exit"))
+		{
+			CloseHandle(menu);
+		}
+	} else if(action == MenuAction_End)
+	{
+		CloseHandle(menu);
 	}
 }
 
@@ -1268,13 +1345,13 @@ public Native_FindItemByName(Handle:plugin, args)
 
 stock GetClientSlot(client)
 {
-    if (!Client_IsValid(client)) return -1;
-    if (!IsPlayerAlive(client)) return -1;
-    
-    decl String:strActiveWeapon[32];
-    GetClientWeapon(client, strActiveWeapon, sizeof(strActiveWeapon));
-    new slot = GetWeaponSlot(strActiveWeapon);
-    return slot;
+	if (!Client_IsValid(client)) return -1;
+	if (!IsPlayerAlive(client)) return -1;
+	
+	decl String:strActiveWeapon[32];
+	GetClientWeapon(client, strActiveWeapon, sizeof(strActiveWeapon));
+	new slot = GetWeaponSlot(strActiveWeapon);
+	return slot;
 }
 
 stock GetWeaponSlot(String:strWeapon[])
