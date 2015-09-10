@@ -147,6 +147,8 @@ You need custom weapons (which usually require custom attributes) in order to ru
 - [Advanced Weaponiser 2 Attributes](https://forums.alliedmods.net/showpost.php?p=2193263&postcount=252)
 - [Orion's Attributes](https://forums.alliedmods.net/showpost.php?p=2193855&postcount=254)
 
+### Or you can make your own!
+
 <hr>
 
 # Forum Thread
