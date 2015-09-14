@@ -58,6 +58,9 @@ new Handle:cvarKillWearablesOnDeath;
 new Handle:cvarSetHealth;
 new Handle:cvarOnlyTeam;
 
+new Handle:g_hAllowDownloads = INVALID_HANDLE;
+new Handle:g_hDownloadUrl = INVALID_HANDLE;
+
 new bool:roundRunning = true, Float:arenaEquipUntil;
 new weaponcount, plugincount, modelcount;
 
@@ -156,6 +159,9 @@ public OnClientPutInServer(client)
 
 public OnMapStart()
 {
+	g_hAllowDownloads = FindConVar("sv_allowdownload");
+	g_hDownloadUrl = FindConVar("sv_downloadurl");
+	
 	new String:Root[PLATFORM_MAX_PATH];
 	weaponcount = 0, plugincount = 0, modelcount = 0;
 	BuildPath(Path_SM, Root, sizeof(Root), "configs/customweapons");
@@ -212,6 +218,128 @@ public OnMapStart()
 			CloseHandle(hDir);
 			continue;
 		}
+		
+		// Attempt #1 at precaching sounds automatically, if this works, models will be next
+		KvRewind(hFile);
+		if(KvJumpToKey(hFile, "sound"))
+		{
+			KvGotoFirstSubKey(hFile);
+			do
+			{
+				new String:section[64];
+				KvGetSectionName(hFile, section, sizeof(section));
+				if(StrEqual(section, "player", false))
+				{
+					new String:replace[PLATFORM_MAX_PATH];
+					KvGetString(hFile, "replace", replace, sizeof(replace));
+					SuperPrecacheSound(replace);
+				}
+			} while(KvGotoNextKey(hFile));
+		}
+		
+		if (KvJumpToKey(hFile, "viewmodel"))
+		{
+			new String:ModelName[PLATFORM_MAX_PATH];
+			KvGetString(hFile, "modelname", ModelName, sizeof(ModelName));
+			if (StrContains(ModelName, "models/", false)) Format(ModelName, sizeof(ModelName), "models/%s", ModelName);
+			if (-1 == StrContains(ModelName, ".mdl", false)) Format(ModelName, sizeof(ModelName), "%s.mdl", ModelName);
+			if (strlen(ModelName) && FileExists(ModelName, true))
+			{
+				decl String:modelfile[PLATFORM_MAX_PATH + 4];
+				decl String:strLine[PLATFORM_MAX_PATH];
+				Format(modelfile, sizeof(modelfile), "%s.dep", ModelName);
+				new Handle:hStream = INVALID_HANDLE;
+				if (FileExists(modelfile))
+				{
+					// Open stream, if possible
+					hStream = OpenFile(modelfile, "r");
+					if (hStream == INVALID_HANDLE)
+					{
+						return;
+					}
+
+					while(!IsEndOfFile(hStream))
+					{
+						// Try to read line. If EOF has been hit, exit.
+						ReadFileLine(hStream, strLine, sizeof(strLine));
+
+						// Cleanup line
+						CleanString(strLine);
+
+						// If file exists...
+						if (!FileExists(strLine, true))
+						{
+							continue;
+						}
+
+						// Precache depending on type, and add to download table
+						if (StrContains(strLine, ".vmt", false) != -1)		PrecacheDecal(strLine, true);
+						else if (StrContains(strLine, ".mdl", false) != -1)	PrecacheModel(strLine, true);
+						else if (StrContains(strLine, ".pcf", false) != -1)	PrecacheGeneric(strLine, true);
+						AddFileToDownloadsTable(strLine);
+					}
+
+					// Close file
+					CloseHandle(hStream);
+				} else
+				{
+					SuperPrecacheModel(ModelName);
+				}
+			}
+		}
+		
+		KvRewind(hFile);
+		if (KvJumpToKey(hFile, "worldmodel"))
+		{
+			new String:ModelName[PLATFORM_MAX_PATH];
+			KvGetString(hFile, "modelname", ModelName, sizeof(ModelName));
+			if (StrContains(ModelName, "models/", false)) Format(ModelName, sizeof(ModelName), "models/%s", ModelName);
+			if (-1 == StrContains(ModelName, ".mdl", false)) Format(ModelName, sizeof(ModelName), "%s.mdl", ModelName);
+			if (strlen(ModelName) && FileExists(ModelName, true))
+			{
+				decl String:modelfile[PLATFORM_MAX_PATH + 4];
+				decl String:strLine[PLATFORM_MAX_PATH];
+				Format(modelfile, sizeof(modelfile), "%s.dep", ModelName);
+				new Handle:hStream = INVALID_HANDLE;
+				if (FileExists(modelfile))
+				{
+					// Open stream, if possible
+					hStream = OpenFile(modelfile, "r");
+					if (hStream == INVALID_HANDLE)
+					{
+						return;
+					}
+
+					while(!IsEndOfFile(hStream))
+					{
+						// Try to read line. If EOF has been hit, exit.
+						ReadFileLine(hStream, strLine, sizeof(strLine));
+
+						// Cleanup line
+						CleanString(strLine);
+
+						// If file exists...
+						if (!FileExists(strLine, true))
+						{
+							continue;
+						}
+
+						// Precache depending on type, and add to download table
+						if (StrContains(strLine, ".vmt", false) != -1)		PrecacheDecal(strLine, true);
+						else if (StrContains(strLine, ".mdl", false) != -1)	PrecacheModel(strLine, true);
+						else if (StrContains(strLine, ".pcf", false) != -1)	PrecacheGeneric(strLine, true);
+						AddFileToDownloadsTable(strLine);
+					}
+
+					// Close file
+					CloseHandle(hStream);
+				} else
+				{
+					SuperPrecacheModel(ModelName);
+				}
+			}
+		}
+		
 		weaponcount++;
 	}
 	CloseHandle(hDir);
@@ -802,7 +930,7 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 	}
 	
 	KvRewind(hConfig);
-	if (KvJumpToKey(hConfig, "sound"))
+	if(KvJumpToKey(hConfig, "sound"))
 		HasCustomSounds[ent] = true;
 	
 	IsCustom[ent] = true;
@@ -864,7 +992,6 @@ public Action:SoundHook(clients[64], &numClients, String:sound[PLATFORM_MAX_PATH
 					if (StrEqual(sound, find, false))
 					{
 						Format(sound, sizeof(sound), replace);
-						PrecacheSound(sound);
 						EmitSoundToClient(client, sound, _, channel, KvGetNum(hConfig, "level", level), flags, KvGetFloat(hConfig, "volume", volume), KvGetNum(hConfig, "pitch", pitch));
 						return Plugin_Changed;
 					}
@@ -1355,6 +1482,85 @@ stock GetClientSlot(client)
 	return slot;
 }
 
+stock bool:HasFastDownload()
+{
+	// if for whatever reason these are invalid, its pretty certain the fastdl isn't working
+	if(g_hAllowDownloads == INVALID_HANDLE || g_hDownloadUrl == INVALID_HANDLE)
+	{
+		return false;
+	}
+	
+	// if sv_allowdownload 0, fastdl is disabled
+	if(!GetConVarBool(g_hAllowDownloads))
+	{
+		return false;
+	}
+	
+	// if sv_downloadurl isn't set, the fastdl isn't enabled properly
+	decl String:strUrl[PLATFORM_MAX_PATH];
+	GetConVarString(g_hDownloadUrl, strUrl, sizeof(strUrl));
+	if(StrEqual(strUrl, ""))
+	{
+		return false;
+	}
+	
+	return true;
+}
+
+stock SuperPrecacheModel(String:strModel[], bool:bRequiredOnServer = false, bool:bMdlOnly = false)
+{
+	decl String:strBase[PLATFORM_MAX_PATH];
+	decl String:strPath[PLATFORM_MAX_PATH];
+	Format(strBase, sizeof(strBase), strModel);
+	SplitString(strBase, ".mdl", strBase, sizeof(strBase));
+	
+	if(!bMdlOnly)
+	{
+		Format(strPath, sizeof(strPath), "%s.phy", strBase);
+		if(FileExists(strPath)) AddFileToDownloadsTable(strPath);
+		
+		Format(strPath, sizeof(strPath), "%s.sw.vtx", strBase);
+		if(FileExists(strPath)) AddFileToDownloadsTable(strPath);
+		
+		Format(strPath, sizeof(strPath), "%s.vvd", strBase);
+		if(FileExists(strPath)) AddFileToDownloadsTable(strPath);
+		
+		Format(strPath, sizeof(strPath), "%s.dx80.vtx", strBase);
+		if(FileExists(strPath)) AddFileToDownloadsTable(strPath);
+		
+		Format(strPath, sizeof(strPath), "%s.dx90.vtx", strBase);
+		if(FileExists(strPath)) AddFileToDownloadsTable(strPath);
+	}
+	
+	AddFileToDownloadsTable(strModel);
+	
+	if(HasFastDownload())
+	{
+		if(bRequiredOnServer && !FileExists(strModel) && !FileExists(strModel, true))
+		{
+			LogError("PRECACHE ERROR: Unable to precache REQUIRED model '%s'. File is not on the server.", strModel);
+		}
+	}
+	
+	return PrecacheModel(strModel, true);
+}
+
+stock SuperPrecacheSound(String:strPath[], String:strPluginName[] = "")
+{
+	if(strlen(strPath) == 0) return;
+	
+	PrecacheSound(strPath, true);
+	decl String:strBuffer[PLATFORM_MAX_PATH];
+	Format(strBuffer, sizeof(strBuffer), "sound/%s", strPath);
+	AddFileToDownloadsTable(strBuffer);
+	
+	if(!FileExists(strBuffer) && !FileExists(strBuffer, true))
+	{
+		if(StrEqual(strPluginName, "")) LogError("PRECACHE ERROR: Unable to precache sound at '%s'. No fastdl service detected, and file is not on the server.", strPath);
+		else LogError("PRECACHE ERROR: Unable to precache sound at '%s'. No fastdl service detected, and file is not on the server. It was required by the plugin '%s'", strPath, strPluginName);
+	}
+}
+
 stock GetWeaponSlot(String:strWeapon[])
 {
 	// Scout
@@ -1694,6 +1900,25 @@ stock TF2_EquipWearable(client, Ent)
 		SDKCall(g_hSdkEquipWearable, client, Ent);
 	}
 }
+
+stock CleanString(String:strBuffer[])
+{
+	// Cleanup any illegal characters
+	new Length = strlen(strBuffer);
+	for (new iPos=0; iPos<Length; iPos++)
+	{
+		switch(strBuffer[iPos])
+		{
+			case '\r': strBuffer[iPos] = ' ';
+			case '\n': strBuffer[iPos] = ' ';
+			case '\t': strBuffer[iPos] = ' ';
+		}
+	}
+
+	// Trim string
+	TrimString(strBuffer);
+}
+
 stock bool:TF2_SdkStartup()
 {
 	new Handle:hGameConf = LoadGameConfigFile("tf2items.randomizer");
