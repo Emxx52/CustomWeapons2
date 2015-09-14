@@ -29,7 +29,7 @@ Want your melee weapon to ignite whoever it crits on? custom_addattribute @me 2 
 - **sm_customweapons_enable** *(1/0, def. 1)* Enables the plugin, of course! Set to 0 to remove all active custom weapons.
 - **sm_customweapons_onlyinspawn** *(1/0, def. 1)* Only allow /custom to be used inside of a spawn room.
 - **sm_customweapons_arena_time** *(def. 20)* Time, in seconds, to allow /custom after spawning in Arena.
-- **sm_customweapons_bots *(def. 0.15)* Percent chance, per slot, that bots will equip a random custom weapon.
+- **sm_customweapons_bots** *(def. 0.15)* Percent chance, per slot, that bots will equip a random custom weapon.
 - **sm_customweapons_menu** *(1/0, def. 1)* Clients are allowed to say /custom to equip weapons manually. Set to 0 to disable manual weapon selection without disabling the entire plugin.
 - **sm_customweapons_killwearablesondeath** *(1/0, def. 1)* Removes custom weapon models when the user dies. Recommended unless bad things start happening.
 - **sm_customweapons_sethealth** *(1/0, def. 1)* When a custom weapon is equipped, the user's health will be set to their maximum.
