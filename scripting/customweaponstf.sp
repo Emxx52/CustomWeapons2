@@ -432,7 +432,41 @@ stock CustomMainMenu(client)
 		new saved = SavedWeapons[client][class][slot];
 		for (new i = 0; i < counts[slot]; i++)
 		{
-			new Handle:hWeapon = GetArrayCell(aItems[class][slot], i), String:Name[64], String:Index[10];
+			new Handle:hWeapon = GetArrayCell(aItems[class][slot], i), String:Name[64], String:Index[10], String:flags[64], bool:canUseWeapon = true;
+			
+			KvRewind(hWeapon);
+			KvGetString(hWeapon, "flags", flags, sizeof(flags));
+			
+			KvRewind(hWeapon);
+			if(KvJumpToKey(hWeapon, "flags"))
+			{
+				new AdminId:adminID = GetUserAdmin(client);
+				if(adminID != INVALID_ADMIN_ID)
+				{
+					new AdminFlag:adminFlags[AdminFlags_TOTAL];
+					new flagBits = ReadFlagString(flags);
+					FlagBitsToArray(flagBits, adminFlags, AdminFlags_TOTAL);
+					
+					for(new j = 0; j < AdminFlags_TOTAL; j++)
+					{
+						if(!GetAdminFlag(adminID, adminFlags[j]) && j >= AdminFlags_TOTAL - 1)
+						{
+							canUseWeapon = false;
+							break;
+						} else if(GetAdminFlag(adminID, adminFlags[j]))
+						{
+							canUseWeapon = true;
+							break;
+						}
+					}
+				}
+			}
+			
+			if(!canUseWeapon)
+			{
+				continue;
+			}
+			
 			KvRewind(hWeapon);
 			KvGetSectionName(hWeapon, Name, sizeof(Name));
 			if (saved == i) Format(Name, sizeof(Name), "%s ✓", Name);
