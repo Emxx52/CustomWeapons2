@@ -459,7 +459,13 @@ stock CustomMainMenu(client)
 							break;
 						}
 					}
+				} else
+				{
+					canUseWeapon = false;
 				}
+			} else
+			{
+				canUseWeapon = true;
 			}
 			
 			if(!canUseWeapon)
