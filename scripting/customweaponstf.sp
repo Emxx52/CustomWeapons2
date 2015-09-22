@@ -584,8 +584,8 @@ stock WeaponInfoMenu(client, TFClassType:class, slot, weapon, Float:delay = -1.0
 		else AddMenuItem(menu, "", "Unsave", ITEMDRAW_DEFAULT);
 	}
 	AddMenuItem(menu, "", "", ITEMDRAW_SPACER);
-	AddMenuItem(menu, "", "Prev Weapon", weapon ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
-	AddMenuItem(menu, "", "Next Weapon", weapon != GetArraySize(aItems[class][slot])-1 ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
+	//AddMenuItem(menu, "", "Prev Weapon", weapon ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
+	//AddMenuItem(menu, "", "Next Weapon", weapon != GetArraySize(aItems[class][slot])-1 ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
 	SetMenuExitBackButton(menu, true);
 	DisplayMenu(menu, client, MENU_TIME_FOREVER);
 	BrowsingClass[client] = class;
@@ -670,8 +670,8 @@ public WeaponInfoHandler(Handle:menu, MenuAction:action, client, item)
 				}
 				WeaponInfoMenu(client, class, slot, index, 0.2);
 			}
-			case 3: WeaponInfoMenu(client, BrowsingClass[client], BrowsingSlot[client], LookingAtItem[client] - 1);
-			case 4: WeaponInfoMenu(client, BrowsingClass[client], BrowsingSlot[client], LookingAtItem[client] + 1);
+			//case 3: WeaponInfoMenu(client, BrowsingClass[client], BrowsingSlot[client], LookingAtItem[client] - 1);
+			//case 4: WeaponInfoMenu(client, BrowsingClass[client], BrowsingSlot[client], LookingAtItem[client] + 1);
 		}
 	}
 	else if (action == MenuAction_End) CloseHandle(menu);
@@ -1367,6 +1367,12 @@ public Action:Command_AddAttribute(client, args)
 		Call_Finish(act);
 		if (!act)
 		{
+			if(StrEqual(plugin, "tf2attributes"))
+			{
+				TF2Attrib_SetByName(wep, attribute, StringToFloat(value));
+				return Plugin_Handled;
+			}
+			
 			ReplyToCommand(client, "Error: Attribute \"%s\" does not exist in attributes plugin \"%s\".", attribute, plugin);
 			return Plugin_Handled;
 		}
