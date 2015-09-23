@@ -1111,7 +1111,7 @@ public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
 {
 	if(victim <= 0) return Plugin_Continue;
 	if(attacker <= 0) return Plugin_Continue;
-	if(victim != attacker) return Plugin_Continue;
+	if(victim == attacker) return Plugin_Continue;
 	
 	new Float:health = float(Entity_GetHealth(victim));
 	
