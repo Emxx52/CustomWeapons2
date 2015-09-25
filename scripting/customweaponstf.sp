@@ -38,7 +38,8 @@ new bool:OKToEquipInArena[MAXPLAYERS + 1];
 
 new bool:IsCustom[2049];
 
-//new String:LogName[2049][64];
+new String:LogName[2049][64];
+new String:KillIcon[2049][64];
 new String:WeaponName[2049][10][9][64];
 new String:WeaponDescription[2049][10][9][512];
 
@@ -219,7 +220,8 @@ public OnMapStart()
 			continue;
 		}
 		
-		// Attempt #1 at precaching sounds automatically, if this works, models will be next
+		weaponcount++;
+		
 		KvRewind(hFile);
 		if(KvJumpToKey(hFile, "sound"))
 		{
@@ -339,8 +341,6 @@ public OnMapStart()
 				}
 			}
 		}
-		
-		weaponcount++;
 	}
 	CloseHandle(hDir);
 	
@@ -432,7 +432,7 @@ stock CustomMainMenu(client)
 		new saved = SavedWeapons[client][class][slot];
 		for (new i = 0; i < counts[slot]; i++)
 		{
-			new Handle:hWeapon = GetArrayCell(aItems[class][slot], i), String:Name[64], String:Index[10], String:flags[64], bool:canUseWeapon = true;
+			new Handle:hWeapon = GetArrayCell(aItems[class][slot], i), String:Name[64], String:Index[10], String:flags[64], bool:canUseWeapon = false;
 			
 			KvRewind(hWeapon);
 			KvGetString(hWeapon, "flags", flags, sizeof(flags));
@@ -449,14 +449,9 @@ stock CustomMainMenu(client)
 					
 					for(new j = 0; j < AdminFlags_TOTAL; j++)
 					{
-						if(!GetAdminFlag(adminID, adminFlags[j]) && j >= AdminFlags_TOTAL - 1)
-						{
-							canUseWeapon = false;
-							break;
-						} else if(GetAdminFlag(adminID, adminFlags[j]))
+						if(GetAdminFlag(adminID, adminFlags[j]) && !canUseWeapon)
 						{
 							canUseWeapon = true;
-							break;
 						}
 					}
 				} else
@@ -591,9 +586,6 @@ stock WeaponInfoMenu(client, TFClassType:class, slot, weapon, Float:delay = -1.0
 	BrowsingClass[client] = class;
 	BrowsingSlot[client] = slot;
 	LookingAtItem[client] = weapon;
-	
-	//WeaponName[client][class][slot] = Name;
-	//WeaponDescription[client][class][slot] = description;
 	
 	strcopy(WeaponName[client][class][slot], 64, Name);
 	strcopy(WeaponDescription[client][class][slot], 512, description);
@@ -975,7 +967,8 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 	
 	IsCustom[ent] = true;
 	
-	//LogName[ent] = logName;
+	strcopy(LogName[ent], 64, logName);
+	strcopy(KillIcon[ent], 64, killIcon);
 	
 	CustomConfig[ent] = hConfig;
 	
@@ -1064,7 +1057,8 @@ public OnEntityDestroyed(ent)
 {
 	if (ent <= 0 || ent > 2048) return;
 	IsCustom[ent] = false;
-	//LogName[ent][0] = '\0';
+	LogName[ent][0] = '\0';
+	KillIcon[ent][0] = '\0';
 	CustomConfig[ent] = INVALID_HANDLE;
 	HasCustomViewmodel[ent] = false;
 	ViewmodelOfWeapon[ent] = 0;
@@ -1169,7 +1163,7 @@ public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
 public Action:Event_Death(Handle:event, const String:name[], bool:dontBroadcast)
 {
 	new client = GetClientOfUserId(GetEventInt(event, "userid"));
-	if (!client) return;
+	if (!Client_IsValid(client)) return;
 	
 	if (GetEventInt(event, "death_flags") & TF_DEATHFLAG_DEADRINGER) return;
 	
@@ -1181,6 +1175,35 @@ public Action:Event_Death(Handle:event, const String:name[], bool:dontBroadcast)
 		if (GetEntProp(i, Prop_Send, "m_bDisguiseWearable")) continue;
 		AcceptEntityInput(i, "Kill");
 	}
+	
+	// Not working currently, will fix later.
+	/*new attacker = GetClientOfUserId(GetEventInt(event, "attacker"));
+	if (!Client_IsValid(attacker)) return;
+	if (attacker == client) return;
+	
+	new String:weapon[33];
+	GetEventString(event, "weapon", weapon, sizeof(weapon));
+	
+	new slot = GetWeaponSlot(weapon);
+	new weaponEnt = GetPlayerWeaponSlot(attacker, slot);
+	
+	if(weaponEnt != -1 && IsCustom[weaponEnt])
+	{
+		if(LogName[weaponEnt][0])
+		{
+			SetEventString(event, "weapon", LogName[weaponEnt]);
+		}
+		
+		if(KillIcon[weaponEnt][0])
+		{
+			SetEventString(event, "weapon_logclassname", KillIcon[weaponEnt]);
+		}
+		
+		if(LogName[weaponEnt][0] || KillIcon[weaponEnt][0])
+		{
+			SetEventInt(event, "customkill", 0);
+		}
+	}*/
 }
 
 public Menu_Death(Handle:menu, MenuAction:action, client, item)
