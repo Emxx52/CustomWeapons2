@@ -239,17 +239,18 @@ public OnMapStart()
 			} while(KvGotoNextKey(hFile));
 		}
 		
+		new String:viewModelName[PLATFORM_MAX_PATH];
+		
 		if (KvJumpToKey(hFile, "viewmodel"))
 		{
-			new String:ModelName[PLATFORM_MAX_PATH];
-			KvGetString(hFile, "modelname", ModelName, sizeof(ModelName));
-			if (StrContains(ModelName, "models/", false)) Format(ModelName, sizeof(ModelName), "models/%s", ModelName);
-			if (-1 == StrContains(ModelName, ".mdl", false)) Format(ModelName, sizeof(ModelName), "%s.mdl", ModelName);
-			if (strlen(ModelName) && FileExists(ModelName, true))
+			KvGetString(hFile, "modelname", viewModelName, sizeof(viewModelName));
+			if (StrContains(viewModelName, "models/", false)) Format(viewModelName, sizeof(viewModelName), "models/%s", viewModelName);
+			if (-1 == StrContains(viewModelName, ".mdl", false)) Format(viewModelName, sizeof(viewModelName), "%s.mdl", viewModelName);
+			if (strlen(viewModelName) && FileExists(viewModelName, true))
 			{
 				decl String:modelfile[PLATFORM_MAX_PATH + 4];
 				decl String:strLine[PLATFORM_MAX_PATH];
-				Format(modelfile, sizeof(modelfile), "%s.dep", ModelName);
+				Format(modelfile, sizeof(modelfile), "%s.dep", viewModelName);
 				new Handle:hStream = INVALID_HANDLE;
 				if (FileExists(modelfile))
 				{
@@ -285,7 +286,7 @@ public OnMapStart()
 					CloseHandle(hStream);
 				} else
 				{
-					SuperPrecacheModel(ModelName);
+					SuperPrecacheModel(viewModelName);
 				}
 			}
 		}
@@ -293,51 +294,55 @@ public OnMapStart()
 		KvRewind(hFile);
 		if (KvJumpToKey(hFile, "worldmodel"))
 		{
-			new String:ModelName[PLATFORM_MAX_PATH];
-			KvGetString(hFile, "modelname", ModelName, sizeof(ModelName));
-			if (StrContains(ModelName, "models/", false)) Format(ModelName, sizeof(ModelName), "models/%s", ModelName);
-			if (-1 == StrContains(ModelName, ".mdl", false)) Format(ModelName, sizeof(ModelName), "%s.mdl", ModelName);
-			if (strlen(ModelName) && FileExists(ModelName, true))
+			new String:worldModelName[PLATFORM_MAX_PATH];
+			KvGetString(hFile, "modelname", worldModelName, sizeof(worldModelName));
+			
+			if (!StrEqual(worldModelName, viewModelName, false))
 			{
-				decl String:modelfile[PLATFORM_MAX_PATH + 4];
-				decl String:strLine[PLATFORM_MAX_PATH];
-				Format(modelfile, sizeof(modelfile), "%s.dep", ModelName);
-				new Handle:hStream = INVALID_HANDLE;
-				if (FileExists(modelfile))
+				if (StrContains(worldModelName, "models/", false)) Format(worldModelName, sizeof(worldModelName), "models/%s", worldModelName);
+				if (-1 == StrContains(worldModelName, ".mdl", false)) Format(worldModelName, sizeof(worldModelName), "%s.mdl", worldModelName);
+				if (strlen(worldModelName) && FileExists(worldModelName, true))
 				{
-					// Open stream, if possible
-					hStream = OpenFile(modelfile, "r");
-					if (hStream == INVALID_HANDLE)
+					decl String:modelfile[PLATFORM_MAX_PATH + 4];
+					decl String:strLine[PLATFORM_MAX_PATH];
+					Format(modelfile, sizeof(modelfile), "%s.dep", worldModelName);
+					new Handle:hStream = INVALID_HANDLE;
+					if (FileExists(modelfile))
 					{
-						return;
-					}
-
-					while(!IsEndOfFile(hStream))
-					{
-						// Try to read line. If EOF has been hit, exit.
-						ReadFileLine(hStream, strLine, sizeof(strLine));
-
-						// Cleanup line
-						CleanString(strLine);
-
-						// If file exists...
-						if (!FileExists(strLine, true))
+						// Open stream, if possible
+						hStream = OpenFile(modelfile, "r");
+						if (hStream == INVALID_HANDLE)
 						{
-							continue;
+							return;
 						}
-
-						// Precache depending on type, and add to download table
-						if (StrContains(strLine, ".vmt", false) != -1)		PrecacheDecal(strLine, true);
-						else if (StrContains(strLine, ".mdl", false) != -1)	PrecacheModel(strLine, true);
-						else if (StrContains(strLine, ".pcf", false) != -1)	PrecacheGeneric(strLine, true);
-						AddFileToDownloadsTable(strLine);
+	
+						while(!IsEndOfFile(hStream))
+						{
+							// Try to read line. If EOF has been hit, exit.
+							ReadFileLine(hStream, strLine, sizeof(strLine));
+	
+							// Cleanup line
+							CleanString(strLine);
+	
+							// If file exists...
+							if (!FileExists(strLine, true))
+							{
+								continue;
+							}
+	
+							// Precache depending on type, and add to download table
+							if (StrContains(strLine, ".vmt", false) != -1)		PrecacheDecal(strLine, true);
+							else if (StrContains(strLine, ".mdl", false) != -1)	PrecacheModel(strLine, true);
+							else if (StrContains(strLine, ".pcf", false) != -1)	PrecacheGeneric(strLine, true);
+							AddFileToDownloadsTable(strLine);
+						}
+	
+						// Close file
+						CloseHandle(hStream);
+					} else
+					{
+						SuperPrecacheModel(worldModelName);
 					}
-
-					// Close file
-					CloseHandle(hStream);
-				} else
-				{
-					SuperPrecacheModel(ModelName);
 				}
 			}
 		}
