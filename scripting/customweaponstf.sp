@@ -10,17 +10,47 @@
 #include <sdkhooks>
 #include <tf2items>
 #include <tf2attributes>
-#include <smlib>
+//#include <morecolors> // wait on translations
 
 #define PLUGIN_VERSION "beta 5"
 
 public Plugin:myinfo = {
 	name = "Custom Weapons 2",
-	author = "MasterOfTheXP, updated by 404 and Theray070696",
+	author = "MasterOfTheXP, updated by 404, Theray070696, and Chdata",
 	description = "Allows players to use custom-made weapons.",
 	version = PLUGIN_VERSION,
 	url = "http://mstr.ca/"
 };
+
+#define MAX_STEAMIDS_PER_WEAPON 5    // How many people's steamIDs can be listed on a weapon to give Self-Made quality to
+#define MAX_STEAMAUTH_LENGTH    21
+#define MAX_COMMUNITYID_LENGTH  18
+
+// TF2 Weapon qualities
+enum 
+{
+	TFQual_None = -1,       // Probably should never actually set an item's quality to this
+	TFQual_Normal = 0,
+	TFQual_NoInspect = 0,   // Players cannot see your attributes
+	TFQual_Rarity1,
+	TFQual_Genuine = 1,
+	TFQual_Rarity2,
+	TFQual_Level = 2,       //  Same color as "Level # Weapon" text in description
+	TFQual_Vintage,
+	TFQual_Rarity3,         //  Is actually 4 - sort of brownish
+	TFQual_Rarity4,
+	TFQual_Unusual = 5,
+	TFQual_Unique,
+	TFQual_Community,
+	TFQual_Developer,
+	TFQual_Selfmade,
+	TFQual_Customized,
+	TFQual_Strange,
+	TFQual_Completed,
+	TFQual_Haunted,         //  13
+	TFQual_Collectors,
+	TFQual_Decorated
+}
 
 new Handle:aItems[10][5];
 new Handle:fOnAddAttribute;
@@ -36,9 +66,12 @@ new SavedWeapons[MAXPLAYERS + 1][10][5];
 new Handle:hSavedWeapons[MAXPLAYERS + 1][10][5];
 new bool:OKToEquipInArena[MAXPLAYERS + 1];
 
+static g_iTheWeaponSlotIWasLastHitBy[MAXPLAYERS + 1] = {-1,...};
+static g_bPluginReloaded = false;
+
 new bool:IsCustom[2049];
 
-new String:LogName[2049][64];
+new String:LogName[2049][64]; // Look at this gigantic amount of memory wastage
 new String:KillIcon[2049][64];
 new String:WeaponName[2049][10][9][64];
 new String:WeaponDescription[2049][10][9][512];
@@ -99,10 +132,14 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 
 public OnPluginStart()
 {
-	RegAdminCmd("custom", Command_Custom, 0);
-	RegAdminCmd("cus", Command_Custom, 0);
-	RegAdminCmd("c", Command_Custom, 0);
-	RegAdminCmd("custom_addattribute", Command_AddAttribute, ADMFLAG_CHEATS);
+	g_bPluginReloaded = false;
+
+	RegAdminCmd("sm_custom", Command_Custom, 0);
+	RegAdminCmd("sm_cus", Command_Custom, 0);
+	RegAdminCmd("sm_c", Command_Custom, 0);
+	RegAdminCmd("sm_custom_addattribute", Command_AddAttribute, ADMFLAG_CHEATS);
+
+	//RegAdminCmd("sm_creload", Command_ReloadSelf, ADMFLAG_ROOT);
 	
 	cvarEnabled = CreateConVar("sm_customweapons_enable", "1", "Enable Custom Weapons. When set to 0, custom weapons will be removed from all players.");
 	cvarOnlyInSpawn = CreateConVar("sm_customweapons_onlyinspawn", "1", "Custom weapons can only be equipped from within a spawn room.");
@@ -116,16 +153,10 @@ public OnPluginStart()
 	
 	HookEvent("post_inventory_application", Event_Resupply);
 	HookEvent("player_hurt", Event_Hurt);
-	HookEvent("player_death", Event_Death);
+	HookEvent("player_death", Event_Death, EventHookMode_Pre);
 	HookEvent("teamplay_round_start", Event_RoundStart);
 	HookEvent("teamplay_round_win", Event_RoundEnd);
 	HookEvent("teamplay_round_stalemate", Event_RoundEnd);
-
-	for (new i = 1; i <= MaxClients; i++)
-	{
-		if (!IsClientInGame(i)) continue;
-		OnClientPutInServer(i);
-	}
 	
 	AddNormalSoundHook(SoundHook);
 	
@@ -134,12 +165,15 @@ public OnPluginStart()
 	if (IsValidEntity(0)) Event_RoundStart(INVALID_HANDLE, "teamplay_round_start", false);
 	
 	TF2_SdkStartup();
+
+	PrintToChatAll("[SM] Custom Weapons 2 has been updated.\n Please use /c and a resupply locker to re-equip.");
 }
 
-public OnClientPutInServer(client)
+public OnClientPostAdminCheck(client)
 {
 	BrowsingClass[client] = TFClass_Unknown;
 	BrowsingSlot[client] = 0;
+	g_iTheWeaponSlotIWasLastHitBy[client] = -1;
 	LookingAtItem[client] = 0;
 	hEquipTimer[client] = INVALID_HANDLE;
 	hBotEquipTimer[client] = INVALID_HANDLE;
@@ -160,6 +194,14 @@ public OnClientPutInServer(client)
 
 public OnMapStart()
 {
+	for (new i = 1; i <= MaxClients; i++) // MaxClients is only guaranteed to be initialized by the time OnMapStart() fires.
+	{
+		if (IsClientInGame(i))
+		{
+			OnClientPostAdminCheck(i);
+		}
+	}
+
 	g_hAllowDownloads = FindConVar("sv_allowdownload");
 	g_hDownloadUrl = FindConVar("sv_downloadurl");
 	
@@ -374,8 +416,14 @@ public OnMapStart()
 
 public OnPluginEnd()
 {
-	RemoveAllCustomWeapons("Your custom weapons have been removed because the Custom Weapons plugin is unloading.");
-	
+	RemoveAllCustomWeapons(); // "Your custom weapons have been removed because the Custom Weapons plugin is unloading."
+
+	if (!g_bPluginReloaded) // Reloaded unexpectedly?! -> else reloaded via the /creload command
+	{
+		// Note: This will play if you manually use sm plugins reload customweaponstf instead of /c reload
+		PrintToChatAll("[SM] Custom Weapons 2 has unexpectedly been unloaded! Functionality disabled.");
+	}
+
 	new String:Dir[PLATFORM_MAX_PATH];
 	BuildPath(Path_SM, Dir, sizeof(Dir), "plugins/customweaponstf");
 	if (!DirExists(Dir)) PrintToServer("[Custom Weapons] WARNING! Custom Weapons' plugin directory (%s) does not exist, so any running attribute plugins will not be unloaded. If you're removing Custom Weapons (goodbye!) any running attribute plugins will likely still show up as <ERROR> in your server's plugin list.", Dir);
@@ -398,6 +446,18 @@ public Action:Command_Custom(client, args)
 		PrintToServer("[Custom Weapons] Custom Weapons is loaded with %i weapons, %i plugins.", weaponcount, plugincount, modelcount);
 		return Plugin_Handled;
 	}
+
+	if (args == 1 && CheckCommandAccess(client, "", ADMFLAG_ROOT, true)) // Allows server owner to reload the plugin dynamically
+	{
+		decl String:szOption[7];
+		GetCmdArgString(szOption, sizeof(szOption));
+		if (StrEqual(szOption, "reload"))
+		{
+			Command_ReloadSelf(client, args);
+			return Plugin_Handled;
+		}
+	}
+
 	CustomMainMenu(client);
 	return Plugin_Handled;
 }
@@ -442,8 +502,14 @@ stock CustomMainMenu(client)
 			KvRewind(hWeapon);
 			KvGetString(hWeapon, "flags", flags, sizeof(flags));
 			
+			if(StrEqual(flags, ""))
+			{
+				KvRewind(hWeapon);
+				KvGetString(hWeapon, "flag", flags, sizeof(flags));
+			}
+			
 			KvRewind(hWeapon);
-			if(KvJumpToKey(hWeapon, "flags"))
+			if(KvJumpToKey(hWeapon, "flags") || KvJumpToKey(hWeapon, "flag"))
 			{
 				new AdminId:adminID = GetUserAdmin(client);
 				if(adminID != INVALID_ADMIN_ID)
@@ -701,19 +767,38 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 	new TFClassType:class = TF2_GetPlayerClass(client);
 	
 	KvRewind(hConfig);
-	new String:name[96], String:baseClass[64], baseIndex, itemQuality, itemLevel, String:logName[64], String:killIcon[64], bool:forcegen, mag, ammo, metal;
+	new String:name[96], String:baseClass[64], baseIndex, itemQuality, itemLevel, String:szSteamIDList[(MAX_STEAMAUTH_LENGTH * MAX_STEAMIDS_PER_WEAPON) + (MAX_STEAMIDS_PER_WEAPON * 2)], String:logName[64], String:killIcon[64], bool:forcegen, mag, ammo, metal;
 	
 	KvGetSectionName(hConfig, name, sizeof(name));
 	KvGetString(hConfig, "baseclass", baseClass, sizeof(baseClass));
 	baseIndex = KvGetNum(hConfig, "baseindex", -1);
-	itemQuality = KvGetNum(hConfig, "quality", -1);
+	itemQuality = KvGetNum(hConfig, "quality", TFQual_Customized);
 	itemLevel = KvGetNum(hConfig, "level", -1);
 	KvGetString(hConfig, "logname", logName, sizeof(logName));
 	KvGetString(hConfig, "killicon", killIcon, sizeof(killIcon));
+	KvGetString(hConfig, "steamids", szSteamIDList, sizeof(szSteamIDList));
 	forcegen = bool:KvGetNum(hConfig, "forcegen", _:false);
 	mag = KvGetNum(hConfig, "mag", -1);
+	if (mag == -1)
+	{
+		mag = KvGetNum(hConfig, "clip", -1); // add support for using clip instead of magazine
+	}
 	ammo = KvGetNum(hConfig, "ammo", -1);
 	metal = KvGetNum(hConfig, "metal", -1);
+
+	decl String:szExplode[5][MAX_STEAMAUTH_LENGTH]; // SteamIDs are separated by commas,,,,
+	ExplodeString(szSteamIDList, ",", szExplode, sizeof(szExplode), sizeof(szExplode[]));
+
+	for (new i = 0; i < MAX_STEAMIDS_PER_WEAPON; i++) // Give selfmade quality to creators of weapons, regardless of whatever quality was set.
+	{
+		if (IsClientID(client, szExplode[i], GetSteamIdAuthType(szExplode[i])))
+		{
+			itemQuality = TFQual_Selfmade;
+			break;
+		}
+	}
+
+	//CPrintToChat(client, "Equipped %s!", name); // Wait on translations
 	
 	new slot = -1;
 	if (KvJumpToKey(hConfig, "classes"))
@@ -784,23 +869,17 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 		TF2Items_SetLevel(hWeapon, 1);
 	}
 	KvRewind(hConfig);
-	
-	if (KvJumpToKey(hConfig, "quality")) {
-		TF2Items_SetQuality(hWeapon, itemQuality);
-	}
-	else {
-		TF2Items_SetQuality(hWeapon, 10);
-	}
-	KvRewind(hConfig);
-	
+
+	TF2Items_SetQuality(hWeapon, itemQuality);
+
 	new numAttributes;
 	if (KvJumpToKey(hConfig, "attributes"))
 	{
 		KvGotoFirstSubKey(hConfig);
 		do {
-			new String:Plugin[64];
-			KvGetString(hConfig, "plugin", Plugin, sizeof(Plugin));
-			if (!StrEqual(Plugin, "tf2items", false)) continue;
+			new String:szPlugin[64];
+			KvGetString(hConfig, "plugin", szPlugin, sizeof(szPlugin));
+			if (!StrEqual(szPlugin, "tf2items", false)) continue;
 			
 			new String:Att[64], String:Value[64];
 			KvGetSectionName(hConfig, Att, sizeof(Att));
@@ -824,12 +903,12 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 			if (!slot)
 			{
 				switch (GetEntProp(i, Prop_Send, "m_iItemDefinitionIndex"))
-				{	case 405, 608: AcceptEntityInput(i, "Kill");	}
+				{	case 405, 608: TF2_RemoveWearable(client, i);	}
 			}
 			else
 			{
 				switch (GetEntProp(i, Prop_Send, "m_iItemDefinitionIndex"))
-				{	case 57, 131, 133, 231, 406, 444, 642: AcceptEntityInput(i, "Kill");	}
+				{	case 57, 131, 133, 231, 406, 444, 642: TF2_RemoveWearable(client, i);	}
 			}
 		}
 	}
@@ -853,26 +932,26 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 	{
 		KvGotoFirstSubKey(hConfig);
 		do {
-			new String:Att[64], String:Plugin[64], String:Value[64];
+			new String:Att[64], String:szPlugin[64], String:Value[PLATFORM_MAX_PATH + 64];
 			KvGetSectionName(hConfig, Att, sizeof(Att));
-			KvGetString(hConfig, "plugin", Plugin, sizeof(Plugin));
+			KvGetString(hConfig, "plugin", szPlugin, sizeof(szPlugin));
 			KvGetString(hConfig, "value", Value, sizeof(Value));
 			
-			if (!StrEqual(Plugin, "tf2attributes", false) && !StrEqual(Plugin, "tf2attributes.int", false) && !StrEqual(Plugin, "tf2items", false))
+			if (!StrEqual(szPlugin, "tf2attributes", false) && !StrEqual(szPlugin, "tf2attributes.int", false) && !StrEqual(szPlugin, "tf2items", false))
 			{
 				new Action:act = Plugin_Continue;
 				Call_StartForward(fOnAddAttribute);
 				Call_PushCell(ent);
 				Call_PushCell(client);
 				Call_PushString(Att);
-				Call_PushString(Plugin);
+				Call_PushString(szPlugin);
 				Call_PushString(Value);
 				Call_Finish(act);
-				if (!act) PrintToServer("[Custom Weapons] WARNING! Attribute \"%s\" (value \"%s\" plugin \"%s\") seems to have been ignored by all attributes plugins. It's either an invalid attribute, incorrect plugin, an error occured in the att. plugin, or the att. plugin forgot to return Plugin_Handled.", Att, Value, Plugin);
+				if (!act) PrintToServer("[Custom Weapons] WARNING! Attribute \"%s\" (value \"%s\" plugin \"%s\") seems to have been ignored by all attributes plugins. It's either an invalid attribute, incorrect plugin, an error occured in the att. plugin, or the att. plugin forgot to return Plugin_Handled.", Att, Value, szPlugin);
 			}
-			else if (!StrEqual(Plugin, "tf2items", false))
+			else if (!StrEqual(szPlugin, "tf2items", false))
 			{
-				if (StrEqual(Plugin, "tf2attributes", false)) TF2Attrib_SetByName(ent, Att, StringToFloat(Value));
+				if (StrEqual(szPlugin, "tf2attributes", false)) TF2Attrib_SetByName(ent, Att, StringToFloat(Value));
 				else TF2Attrib_SetByName(ent, Att, Float:StringToInt(Value));
 			}
 			
@@ -916,13 +995,13 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 			{
 				SetEntProp(vm, Prop_Send, "m_fEffects", 0);
 				SetEntProp(vm, Prop_Send, "m_iParentAttachment", attachment);
-				new Float:offs[3], Float:angOffs[3], Float:scale;
+				new Float:offs[3], Float:angOffs[3], Float:flScale;
 				KvGetVector(hConfig, "pos", offs);
 				KvGetVector(hConfig, "ang", angOffs);
-				scale = KvGetFloat(hConfig, "scale", 1.0);
+				flScale = KvGetFloat(hConfig, "scale", 1.0);
 				SetEntPropVector(vm, Prop_Send, "m_vecOrigin", offs);
 				SetEntPropVector(vm, Prop_Send, "m_angRotation", angOffs);
-				if (scale != 1.0) SetEntPropFloat(vm, Prop_Send, "m_flModelScale", scale);
+				if (flScale != 1.0) SetEntPropFloat(vm, Prop_Send, "m_flModelScale", flScale);
 			}
 		}
 	}
@@ -1079,7 +1158,14 @@ public OnEntityDestroyed(ent)
 		while ((i = FindEntityByClassname(i, "tf_wearable*")) != -1)
 		{
 			if (ent != tiedEntity[i]) continue;
-			AcceptEntityInput(i, "Kill");
+			if (IsValidClient(wearableOwner[ent]))
+			{
+				TF2_RemoveWearable(wearableOwner[ent], i);
+			}
+			else
+			{
+				AcceptEntityInput(i, "Kill"); // This can cause graphical glitches
+			}
 		}
 		hasWearablesTied[ent] = false;
 	}
@@ -1106,109 +1192,100 @@ public Action:Event_Hurt(Handle:event, const String:name[], bool:dontBroadcast)
 	if (attacker) OKToEquipInArena[attacker] = false;
 }
 
-public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damagetype, &weapon, Float:damageForce[3], Float:damagePosition[3], damagecustom)
+bool:GetValueFromConfig(iClient, iSlot, const String:szKey[], String:szValue[], iszValueSize)
 {
-	if(victim <= 0) return Plugin_Continue;
-	if(attacker <= 0) return Plugin_Continue;
-	if(victim == attacker) return Plugin_Continue;
-	
-	new Float:health = float(Entity_GetHealth(victim));
-	
-	if(health - damage <= 0)
+	new iClass = _:TF2_GetPlayerClass(iClient);
+
+	if (SavedWeapons[iClient][iClass][iSlot] == -1 || aItems[iClass][iSlot] == INVALID_HANDLE)
+    {
+        return false;
+    }
+
+	new Handle:hConfig = GetArrayCell(aItems[iClass][iSlot], SavedWeapons[iClient][iClass][iSlot]);
+	if (hConfig == INVALID_HANDLE)
 	{
-		// Get the slot
-		new slot = GetClientSlot(attacker);
-		decl String:strClassname[PLATFORM_MAX_PATH];
-		if(weapon > 0 && IsValidEdict(weapon))
-		{
-			GetEdictClassname(weapon, strClassname, sizeof(strClassname));
-			slot = GetWeaponSlot(strClassname);
-		} else
-		{
-			if(inflictor > 0 && !Client_IsValid(inflictor) && IsValidEdict(inflictor))
-			{
-				GetEdictClassname(inflictor, strClassname, sizeof(strClassname));
-				slot = GetWeaponSlot(strClassname);
-			}
-		}
-		
-		new TFClassType:class = TF2_GetPlayerClass(attacker);
-		
-		if (weapon != -1 && IsCustom[weapon])
-		{
-			new Handle:menu = CreateMenu(Menu_Death);
-			
-			SetMenuTitle(menu, "%s\n \n%s", WeaponName[attacker][class][slot], WeaponDescription[attacker][class][slot]);
-			AddMenuItem(menu, "exit", "Close");
-			SetMenuPagination(menu, MENU_NO_PAGINATION);
-			SetMenuExitButton(menu, false);
-			
-			DisplayMenu(menu, victim, 4);
-		} else
-		{
-			weapon = GetPlayerWeaponSlot(attacker, slot);
-			
-			if(weapon != -1 && IsCustom[weapon])
-			{
-				new Handle:menu = CreateMenu(Menu_Death);
-				
-				SetMenuTitle(menu, "%s\n \n%s", WeaponName[attacker][class][slot], WeaponDescription[attacker][class][slot]);
-				AddMenuItem(menu, "exit", "Close");
-				SetMenuPagination(menu, MENU_NO_PAGINATION);
-				SetMenuExitButton(menu, false);
-				
-				DisplayMenu(menu, victim, 4);
-			}
-		}
+		return false;
 	}
-	
+
+	KvRewind(hConfig);
+
+	if (StrEqual(szKey, "name"))
+	{
+		return KvGetSectionName(hConfig, szValue, iszValueSize);
+	}
+	else
+	{
+		KvGetString(hConfig, szKey, szValue, iszValueSize);
+	}
+
+	return false;
+}
+
+public Action:OnTakeDamage(iVictim, &iAtker, &iInflictor, &Float:flDamage, &iDmgType, &iWeapon, Float:vDmgForce[3], Float:vDmgPos[3], iDmgCustom)
+{
+	if (0 < iAtker && iAtker <= MaxClients)
+	{
+		g_iTheWeaponSlotIWasLastHitBy[iVictim] = GetSlotFromPlayerWeapon(iAtker, iWeapon);
+	}
 	return Plugin_Continue;
+}
+
+// Displays a menu describing what weapon the victim was killed by
+DisplayDeathMenu(iKiller, iVictim, TFClassType:iAtkClass, iAtkSlot)
+{
+	if (iAtkSlot == -1 || iAtkClass == TFClass_Unknown || iKiller == iVictim || !IsValidClient(iKiller)) // In event_death, iVictim will surely be valid at this point
+	{
+		return;
+	}
+
+	new Handle:hMenu = CreateMenu(Menu_Death);
+	SetMenuTitle(hMenu, "%s\n \n%s", WeaponName[iKiller][iAtkClass][iAtkSlot], WeaponDescription[iKiller][iAtkClass][iAtkSlot]);
+	AddMenuItem(hMenu, "exit", "Close");
+	SetMenuPagination(hMenu, MENU_NO_PAGINATION);
+	SetMenuExitButton(hMenu, false);
+	DisplayMenu(hMenu, iVictim, 4); // 4 second lasting menu
 }
 
 public Action:Event_Death(Handle:event, const String:name[], bool:dontBroadcast)
 {
 	new client = GetClientOfUserId(GetEventInt(event, "userid"));
-	if (!Client_IsValid(client)) return;
+	if (!client)
+	{
+		return Plugin_Continue;
+	}
+
+	new iKiller = GetClientOfUserId(GetEventInt(event, "attacker"));
+
+	if (iKiller && IsClientInGame(iKiller) && g_iTheWeaponSlotIWasLastHitBy[client] != -1) // TODO: Test this vs environmental deaths and whatnot.
+	{
+		decl String:szWeaponLogClassname[64];
+		GetValueFromConfig(iKiller, g_iTheWeaponSlotIWasLastHitBy[client], "logname", szWeaponLogClassname, sizeof(szWeaponLogClassname));
+		if (szWeaponLogClassname[0] != '\0')
+		{
+			SetEventString(event, "weapon_logclassname", szWeaponLogClassname);
+		}
+
+		// SetEventString(event, "weapon", szKill_Icon); // Not a recommended method, as things like sniper rifles can have multiple kill icons
+	}
+
+	g_iTheWeaponSlotIWasLastHitBy[client] = -1;
+
+	if (GetEventInt(event, "death_flags") & TF_DEATHFLAG_DEADRINGER) return Plugin_Continue;
 	
-	if (GetEventInt(event, "death_flags") & TF_DEATHFLAG_DEADRINGER) return;
-	
+	if (!GetConVarBool(cvarKillWearablesOnDeath)) return Plugin_Continue;
+
 	new i = -1;
-	while ((i = FindEntityByClassname(i, "tf_wearable*")) != -1 && GetConVarBool(cvarKillWearablesOnDeath))
+	while ((i = FindEntityByClassname(i, "tf_wearable*")) != -1)
 	{
 		if (!tiedEntity[i]) continue;
 		if (client != GetEntPropEnt(i, Prop_Send, "m_hOwnerEntity")) continue;
 		if (GetEntProp(i, Prop_Send, "m_bDisguiseWearable")) continue;
-		AcceptEntityInput(i, "Kill");
+		TF2_RemoveWearable(client, i);
 	}
-	
-	// Not working currently, will fix later.
-	/*new attacker = GetClientOfUserId(GetEventInt(event, "attacker"));
-	if (!Client_IsValid(attacker)) return;
-	if (attacker == client) return;
-	
-	new String:weapon[33];
-	GetEventString(event, "weapon", weapon, sizeof(weapon));
-	
-	new slot = GetWeaponSlot(weapon);
-	new weaponEnt = GetPlayerWeaponSlot(attacker, slot);
-	
-	if(weaponEnt != -1 && IsCustom[weaponEnt])
-	{
-		if(LogName[weaponEnt][0])
-		{
-			SetEventString(event, "weapon", LogName[weaponEnt]);
-		}
-		
-		if(KillIcon[weaponEnt][0])
-		{
-			SetEventString(event, "weapon_logclassname", KillIcon[weaponEnt]);
-		}
-		
-		if(LogName[weaponEnt][0] || KillIcon[weaponEnt][0])
-		{
-			SetEventInt(event, "customkill", 0);
-		}
-	}*/
+
+	DisplayDeathMenu(iKiller, client, TF2_GetPlayerClass(iKiller), g_iTheWeaponSlotIWasLastHitBy[client]);
+
+	return Plugin_Continue;
 }
 
 public Menu_Death(Handle:menu, MenuAction:action, client, item)
@@ -1356,6 +1433,15 @@ public Action:Timer_OneSecond(Handle:timer)
 			if (numCustomHealers) PrintHintText(client, customHealers);
 		}
 	}
+}
+
+public Action:Command_ReloadSelf(iClient, iArgC)
+{
+	g_bPluginReloaded = true;
+	ReplyToCommand(iClient, "[SM] The plugin has been reloaded.");
+	//PrintToChatAll("[SM] All custom weapons have been reset, the plugin reloaded!");
+	ServerCommand("sm plugins reload customweaponstf");
+	return Plugin_Handled;
 }
 
 public Action:Command_AddAttribute(client, args)
@@ -1547,7 +1633,7 @@ public Native_FindItemByName(Handle:plugin, args)
 
 stock GetClientSlot(client)
 {
-	if (!Client_IsValid(client)) return -1;
+	if (!IsValidClient(client)) return -1;
 	if (!IsPlayerAlive(client)) return -1;
 	
 	decl String:strActiveWeapon[32];
@@ -1635,176 +1721,17 @@ stock SuperPrecacheSound(String:strPath[], String:strPluginName[] = "")
 	}
 }
 
-stock GetWeaponSlot(String:strWeapon[])
+// From chdata.inc
+stock GetSlotFromPlayerWeapon(iClient, iWeapon)
 {
-	// Scout
-	if (StrEqual(strWeapon, "soda_popper")) return 0;
-	if (StrEqual(strWeapon, "tf_weapon_soda_popper")) return 0;
-	if (StrEqual(strWeapon, "tf_weapon_scattergun")) return 0;
-	if (StrEqual(strWeapon, "scattergun")) return 0;
-	if (StrEqual(strWeapon, "force_a_nature")) return 0;
-	if (StrEqual(strWeapon, "tf_weapon_handgun_scout_primary")) return 0;
-	if (StrEqual(strWeapon, "tf_weapon_pep_brawler_blaster")) return 0;
-	if (StrEqual(strWeapon, "handgun_scout_secondary")) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_handgun_scout_secondary")) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_pistol_scout")) return 1;
-	if (StrEqual(strWeapon, "pistol_scout")) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_cleaver")) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_lunchbox_drink")) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_jar_milk")) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_bat_wood")) return 2;
-	if (StrEqual(strWeapon, "tf_weapon_bat_giftwrap")) return 2;
-	if (StrEqual(strWeapon, "bat_giftwrap")) return 2;
-	if (StrEqual(strWeapon, "ball")) return 2;
-	if (StrEqual(strWeapon, "bat_wood")) return 2;
-	if (StrEqual(strWeapon, "bat")) return 2;
-	if (StrEqual(strWeapon, "tf_weapon_bat")) return 2;
-	if (StrEqual(strWeapon, "taunt_scout")) return 2;
-	if (StrEqual(strWeapon, "tf_weapon_bat_fish")) return 2;
-	if (StrEqual(strWeapon, "bat_fish")) return 2;
-	if (StrEqual(strWeapon, "saxxy")) return 2;
-	if (StrEqual(strWeapon, "tf_weapon_bat_giftwrap")) return 2;
-	
-	// Soldier
-	if (StrEqual(strWeapon, "tf_weapon_rocketlauncher")) return 0;
-	if (StrEqual(strWeapon, "tf_weapon_particle_cannon")) return 0;
-	if (StrEqual(strWeapon, "particle_cannon")) return 0;
-	if (StrEqual(strWeapon, "tf_projectile_energy_ring")) return 0;
-	if (StrEqual(strWeapon, "energy_ring")) return 0;
-	if (StrEqual(strWeapon, "tf_projectile_rocket")) return 0;
-	if (StrEqual(strWeapon, "tf_weapon_rocketlauncher_directhit")) return 0;
-	if (StrEqual(strWeapon, "tf_weapon_rocketlauncher_airstrike")) return 0;
-	if (StrEqual(strWeapon, "rocketlauncher_directhit")) return 0;
-	if (StrEqual(strWeapon, "tf_projectile_energy_ball")) return 1;
-	if (StrEqual(strWeapon, "energy_ball")) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_shotgun_soldier")) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_raygun")) return 1;
-	if (StrEqual(strWeapon, "raygun")) return 1;
-	if (StrEqual(strWeapon, "shotgun_soldier")) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_buff_item")) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_shovel")) return 2;
-	if (StrEqual(strWeapon, "shovel")) return 2;
-	if (StrEqual(strWeapon, "pickaxe")) return 2;
-	if (StrEqual(strWeapon, "tf_weapon_katana")) return 2;
-	if (StrEqual(strWeapon, "demokatana")) return 2;
-	if (StrEqual(strWeapon, "katana")) return 2;
-	if (StrEqual(strWeapon, "taunt_soldier")) return 2;
-	
-	// Pyro
-	if (StrEqual(strWeapon, "tf_weapon_drg_pomson")) return 0;
-	if (StrEqual(strWeapon, "drg_pomson")) return 0;
-	if (StrEqual(strWeapon, "tf_weapon_flamethrower")) return 0;
-	if (StrEqual(strWeapon, "flamethrower")) return 0;
-	if (StrEqual(strWeapon, "tf_weapon_flaregun_revenge")) return 1;
-	if (StrEqual(strWeapon, "flaregun_revenge")) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_flaregun")) return 1;
-	if (StrEqual(strWeapon, "flaregun")) return 1;
-	if (StrEqual(strWeapon, "taunt_pyro")) return 1;
-	if (StrEqual(strWeapon, "shotgun_pyro")) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_shotgun_pyro")) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_fireaxe")) return 2;
-	if (StrEqual(strWeapon, "fireaxe")) return 2;
-	if (StrEqual(strWeapon, "axtinguisher")) return 2;
-	if (StrEqual(strWeapon, "firedeath")) return -2;
-	if (StrEqual(strWeapon, "tf_weapon_flaregun_revenge")) return 1;
-	
-	// Demoman
-	if (StrEqual(strWeapon, "tf_projectile_pipe")) return 0;
-	if (StrEqual(strWeapon, "tf_weapon_grenadelauncher")) return 0;
-	if (StrEqual(strWeapon, "tf_weapon_cannon")) return 0;
-	if (StrEqual(strWeapon, "loose_cannon_impact")) return 0;
-	if (StrEqual(strWeapon, "loose_cannon")) return 0;
-	if (StrEqual(strWeapon, "tf_weapon_pipebomblauncher")) return 1;
-	if (StrEqual(strWeapon, "tf_projectile_pipe_remote")) return 1;
-	if (StrEqual(strWeapon, "sticky_resistance")) return 1;
-	if (StrEqual(strWeapon, "tf_wearable_demoshield")) return 1;
-	if (StrEqual(strWeapon, "wearable_demoshield")) return 1;
-	if (StrEqual(strWeapon, "demoshield")) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_bottle")) return 2;
-	if (StrEqual(strWeapon, "bottle")) return 2;
-	if (StrEqual(strWeapon, "tf_weapon_sword")) return 2;
-	if (StrEqual(strWeapon, "tf_weapon_stickbomb")) return 2;
-	if (StrEqual(strWeapon, "stickbomb")) return 2;
-	if (StrEqual(strWeapon, "sword")) return 2;
-	if (StrEqual(strWeapon, "taunt_demoman")) return 2;
-	
-	// Heavy
-	if (StrEqual(strWeapon, "tf_weapon_minigun")) return 0;
-	if (StrEqual(strWeapon, "minigun")) return 0;
-	if (StrEqual(strWeapon, "natascha")) return 0;
-	if (StrEqual(strWeapon, "brass_beast")) return 0;
-	if (StrEqual(strWeapon, "tf_weapon_shotgun_hwg")) return 1;
-	if (StrEqual(strWeapon, "shotgun_hwg")) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_lunchbox")) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_fists")) return 2;
-	if (StrEqual(strWeapon, "fists")) return 2;
-	if (StrEqual(strWeapon, "taunt_heavy")) return 2;
-	if (StrEqual(strWeapon, "gloves")) return 2;
-	
-	// Engineer
-	if (StrEqual(strWeapon, "tf_weapon_shotgun_primary")) return 0;
-	if (StrEqual(strWeapon, "shotgun_primary")) return 0;
-	if (StrEqual(strWeapon, "taunt_guitar_kill")) return 0;
-	if (StrEqual(strWeapon, "frontier_kill")) return 0;
-	if (StrEqual(strWeapon, "tf_weapon_sentry_revenge")) return 0;
-	if (StrEqual(strWeapon, "tf_weapon_shotgun_building_rescue")) return 0;
-	if (StrEqual(strWeapon, "the_rescue_ranger")) return 0;
-	if (StrEqual(strWeapon, "tf_weapon_laser_pointer")) return 1;
-	if (StrEqual(strWeapon, "wrangler_kill")) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_pistol")) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_mechanical_arm")) return 1;
-	if (StrEqual(strWeapon, "mechanical_arm")) return 1;
-	if (StrEqual(strWeapon, "pistol")) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_wrench")) return 2;
-	if (StrEqual(strWeapon, "wrench")) return 2;
-	if (StrEqual(strWeapon, "tf_weapon_robot_arm")) return 2;
-	if (StrEqual(strWeapon, "robot_arm_combo_kill")) return 2;
-	if (StrEqual(strWeapon, "robot_arm_kill")) return 2;
-	if (StrEqual(strWeapon, "robot_arm_blender_kill")) return 2;
-	if (StrEqual(strWeapon, "tf_weapon_pda_engineer_build")) return 3;
-	if (StrEqual(strWeapon, "tf_weapon_pda_engineer_destroy")) return 4;
-	if (StrEqual(strWeapon, "tf_weapon_drg_pomson")) return 0;
-	
-	if (StrEqual(strWeapon, "obj_sentrygun")) return 9;
-	if (StrEqual(strWeapon, "sentrygun")) return 9;
-	
-	// Medic
-	if (StrEqual(strWeapon, "tf_weapon_syringegun_medic")) return 0;
-	if (StrEqual(strWeapon, "syringegun_medic")) return 0;
-	if (StrEqual(strWeapon, "tf_weapon_medigun")) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_bonesaw")) return 2;
-	if (StrEqual(strWeapon, "bonesaw")) return 2;
-	if (StrEqual(strWeapon, "ubersaw")) return 2;
-	if (StrEqual(strWeapon, "tf_weapon_crossbow")) return 0;
-	
-	// Sniper
-	if (StrEqual(strWeapon, "tf_weapon_compound_bow")) return 0;
-	if (StrEqual(strWeapon, "tf_projectile_arrow")) return 0;
-	if (StrEqual(strWeapon, "projectile_arrow")) return 0;
-	if (StrEqual(strWeapon, "arrow")) return 0;
-	if (StrEqual(strWeapon, "taunt_sniper")) return 0;
-	if (StrEqual(strWeapon, "huntsman")) return 0;
-	if (StrEqual(strWeapon, "tf_weapon_sniperrifle_classic")) return 0;
-	if (StrEqual(strWeapon, "tf_weapon_sniperrifle")) return 0;
-	if (StrEqual(strWeapon, "sniperrifle")) return 0;
-	if (StrEqual(strWeapon, "tf_weapon_smg")) return 1;
-	if (StrEqual(strWeapon, "smg")) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_jar")) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_club")) return 2;
-	if (StrEqual(strWeapon, "club")) return 2;
-	
-	// Spy
-	if (StrEqual(strWeapon, "tf_weapon_revolver", false)) return 0;
-	if (StrEqual(strWeapon, "revolver", false)) return 0;
-	if (StrEqual(strWeapon, "ambassador", false)) return 0;
-	if (StrEqual(strWeapon, "tf_weapon_pda_spy", false)) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_sapper", false)) return 1;
-	if (StrEqual(strWeapon, "tf_weapon_knife", false)) return 2;
-	if (StrEqual(strWeapon, "knife", false)) return 2;
-	if (StrEqual(strWeapon, "taunt_spy", false)) return 2;
-	if (StrEqual(strWeapon, "tf_weapon_invis", false)) return 4;
-	
-	return -2;
+	for (new i = 0; i <= 5; i++)
+	{
+		if (iWeapon == GetPlayerWeaponSlot(iClient, i))
+		{
+			return i;
+		}
+	}
+	return -1;
 }
 
 stock SetAmmo_Weapon(weapon, newAmmo)
@@ -1842,12 +1769,16 @@ stock TF2_GetClassString(TFClassType:class, String:str[], maxlen, bool:proper = 
 stock TF2_GetPlayerClassString(client, String:str[], maxlen, bool:proper = false)
 	TF2_GetClassString(TF2_GetPlayerClass(client), str, maxlen, proper);
 
-stock RemoveAllCustomWeapons(const String:reason[])
+stock RemoveAllCustomWeapons() // const String:reason[]
 {
 	for (new client = 1; client <= MaxClients; client++)
 	{
-		if (!IsClientInGame(client)) continue;
-		new bool:removed, bool:removedSlot[5];
+		if (IsClientInGame(client))
+		{
+			TF2_RegeneratePlayer(client);
+		}
+
+		/*new bool:removed, bool:removedSlot[5];
 		for (new slot = 0; slot <= 4; slot++)
 		{
 			new wep = GetPlayerWeaponSlot(client, slot);
@@ -1862,8 +1793,8 @@ stock RemoveAllCustomWeapons(const String:reason[])
 			if (removedSlot[slot]) continue;
 			ClientCommand(client, "slot%i", slot+1);
 			break;
-		}
-		if (removed) PrintToChat(client, reason);
+		}*/
+		//if (removed) PrintToChat(client, reason);
 	}
 }
 
@@ -2009,4 +1940,58 @@ stock bool:TF2_SdkStartup()
 	CloseHandle(hGameConf);
 	g_bSdkStarted = true;
 	return true;
+}
+
+// Common stocks from chdata.inc below
+
+/*
+	Common check that says whether or not a client index is occupied.
+*/
+stock bool:IsValidClient(iClient)
+{
+	return (0 < iClient && iClient <= MaxClients && IsClientInGame(iClient));
+}
+
+/*
+	Is a valid entity, but guaranteed not to be the world, or a player.
+
+	"Entity, Non-Player"
+*/
+stock bool:IsValidEnp(iEnt)
+{
+	return iEnt > MaxClients && IsValidEntity(iEnt);
+}
+
+stock bool:IsClientID(iClient, String:szSteamId[MAX_STEAMAUTH_LENGTH], AuthIdType:iAuthId = AuthId_Steam2)
+{
+	if (!IsClientAuthorized(iClient))
+	{
+		return false;
+	}
+
+	decl String:szClientAuth[MAX_STEAMAUTH_LENGTH];
+	GetClientAuthId(iClient, iAuthId, szClientAuth, sizeof(szClientAuth));
+	return StrEqual(szClientAuth, szSteamId);
+}
+
+stock AuthIdType:GetSteamIdAuthType(const String:szId[])
+{
+	if (StrStarts(szId, "STEAM_0:"))
+	{
+		return AuthId_Steam2;
+	}
+	else if (StrStarts(szId, "[U:1:"))
+	{
+		return AuthId_Steam3;
+	}
+	else if (StrStarts(szId, "7656119"))
+	{
+		return AuthId_SteamID64;
+	}
+	return AuthIdType:-1;
+}
+
+stock bool:StrStarts(const String:szStr[], const String:szSubStr[], bool:bCaseSensitive = true)
+{
+	return !StrContains(szStr, szSubStr, bCaseSensitive);
 }
