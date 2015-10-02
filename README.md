@@ -23,6 +23,8 @@ Valve attributes not unique enough? Create your own attributes sub-plugin with e
 
 Want your melee weapon to ignite whoever it crits on? custom_addattribute @me 2 "crits ignite" "1" "basic-attributes"
 
+Users marked as "ROOT" or Z flag can use /c reload as an alias to reloading the plugin. This is the expected way to reload.
+
 <hr>
 
 # ConVars
@@ -37,18 +39,59 @@ Want your melee weapon to ignite whoever it crits on? custom_addattribute @me 2 
 
 <hr>
 
+# Planned features (Chdata's TODO List)
+
+* High priority
+- Integrate clientprefs + reload player weapons on plugin reset.
+- Load newly added weapons+attributes without plugin reset.
+- Translation phrases
+- Custom wearables! (e.g. Gunboats, Chargin' Targe)
+- Make custom weapons start with the correct clip and ammo by default, unless overriden, via https://forums.alliedmods.net/showthread.php?t=262695
+
+* Low priority
+- Kill icons (this should probably be controlled through a custom attribute plugin as there are varying scenarios in which you may use a variety of different kill icons ... dunno if custom kill icons are possible/easy to do)
+- Native or otherwise to see if a weapon has a certain attribute
+- List registered attributes for devs.
+- The ability to apply/not apply certain attributes if certain cvars (such as hale_enable) are active (Attribute plugin creators can do this on their own, however a standard naming convention should be created like cw2_orion_disable_x_attribute)
+- Auto chat advertisements (just use an chat advert plugin for this ...)
+
+* Completed, unimplemented
+- Add lots of confirmation messages such as "Unequipped Weapon Name". (wait on translation phrases)
+- When custom weapons are equipped, display in chat the names of the equipped items. (wait on translation phrases)
+- Split menus by weapon slot. (wait on translation phrases)
+
+Example naming scheme for translation phrases will be as follows:
+
+"#CW2 Weapon Equip Msg"
+{
+    "en" "Equipped {1}!"
+}
+
+Follows a similar format to what Valve actually does.
+
+* Completed, updated in the plugin
+- Fix this botkiller nonsense that was fixed in VSH a year ago.
+- SteamID keyvalue to force "Self Made" quality. Supports multiple steamids.
+- weapon_logclassname overwriting on kill
+
+<hr>
+
 # How to make custom weapons
 Creating a new custom weapon is plain easy. Simply duplicate a custom weapon's config file, and fill out its info with your own.
+
+It is suggested to name your weaponconfigfile.txt with the following naming schemata:
+https://forums.alliedmods.net/showpost.php?p=2345131&postcount=573
 
 The weapon's name goes right at the top, in "quotes".
 - "classes" is the array of player classes the weapon should be available for; the number next to each class is the weapon slot (0 = Primary, 1 = Secondary, 2 = Melee)
 - "baseclass" is the classname of the weapon, without "tf_weapon_".
 - "baseindex" is the item index of the base weapon, see above classname link. If unsure, stick within the 0-30s.
   - If it uses ammo (i.e. most non-melee weapons) it should have "mag" and "ammo" keys with the intended starting ammo.
-- "logname" will be displayed in client consoles when a kill is made with the weapon. Not currently implemented.
-- "killicon", also not implemented yet, will be able to change the weapon's icon in the kill feed.
+- "logname" will be displayed in client consoles when a kill is made with the weapon.
+- "killicon" will be able to change the weapon's icon in the kill feed if it's ever implemented
 - "level" will set the item level
-- "quality" will set the item quality. Use item quality numbers listed below
+- "quality" will set the item quality. Use item quality numbers listed below. Defaults to 10 (Customized). Will always be overwritten by the "steamids" option.
+- "steamids" SteamIDs of the creator(s) of the weapon, separated by ,commas, - Supports STEAM_0 and [U:] type IDs. Matching SteamIDs are given Self-Made quality.
 - "description" is the stat list that players will see when selecting the weapon. \n = Newline. "\n \n" will skip an entire line.
 - "attributes"; the bread-n-butter. Each attribute has:
   - An identifier, to set what attribute it is. This will either be a case-sensitive name (Custom Weapons, TF2Attributes) or an attribute index (TF2Items).
