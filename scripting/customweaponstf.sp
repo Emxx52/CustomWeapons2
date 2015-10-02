@@ -166,7 +166,7 @@ public OnPluginStart()
 	
 	TF2_SdkStartup();
 
-	PrintToChatAll("[SM] Custom Weapons 2 has been updated. Please use /c and a resupply locker to re-equip.");
+	PrintToChatAll("[SM] Custom Weapons 2 has been updated.\n Please use /c and a resupply locker to re-equip.");
 }
 
 public OnClientPostAdminCheck(client)
@@ -1427,7 +1427,7 @@ public Action:Command_ReloadSelf(iClient, iArgC)
 {
 	g_bPluginReloaded = true;
 	ReplyToCommand(iClient, "[SM] The plugin has been reloaded.");
-	PrintToChatAll("[SM] All custom weapons have been reset, the plugin reloaded!");
+	//PrintToChatAll("[SM] All custom weapons have been reset, the plugin reloaded!");
 	ServerCommand("sm plugins reload customweaponstf");
 	return Plugin_Handled;
 }
