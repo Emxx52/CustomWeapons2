@@ -1228,7 +1228,7 @@ public Action:OnTakeDamage(iVictim, &iAtker, &iInflictor, &Float:flDamage, &iDmg
 // Displays a menu describing what weapon the victim was killed by
 DisplayDeathMenu(iKiller, iVictim, TFClassType:iAtkClass, iAtkSlot)
 {
-	if (iAtkSlot == -1 || iAtkClass == TFClass_Unknown || !IsValidClient(iKiller)) // In event_death, iVictim will surely be valid at this point
+	if (iAtkSlot == -1 || iAtkClass == TFClass_Unknown || iKiller == iVictim || !IsValidClient(iKiller)) // In event_death, iVictim will surely be valid at this point
 	{
 		return;
 	}
