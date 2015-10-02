@@ -1189,6 +1189,12 @@ public Action:Event_Hurt(Handle:event, const String:name[], bool:dontBroadcast)
 bool:GetValueFromConfig(iClient, iSlot, const String:szKey[], String:szValue[], iszValueSize)
 {
 	new iClass = _:TF2_GetPlayerClass(iClient);
+
+	if (SavedWeapons[iClient][iClass][iSlot] == -1 || aItems[iClass][iSlot] == INVALID_HANDLE)
+    {
+        return false;
+    }
+
 	new Handle:hConfig = GetArrayCell(aItems[iClass][iSlot], SavedWeapons[iClient][iClass][iSlot]);
 	if (hConfig == INVALID_HANDLE)
 	{
