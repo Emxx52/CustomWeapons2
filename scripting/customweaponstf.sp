@@ -447,14 +447,14 @@ public Action:Command_Custom(client, args)
 		return Plugin_Handled;
 	}
 
-	if (args == 1 && GetAdminFlag(GetUserAdmin(client), Admin_Root)) // Allows server owner to reload the plugin dynamically
+	if (args == 1 && CheckCommandAccess(client, "", ADMFLAG_ROOT, true)) // Allows server owner to reload the plugin dynamically
 	{
-		decl String:szOption[3];
+		decl String:szOption[7];
 		GetCmdArgString(szOption, sizeof(szOption));
 		if (StrEqual(szOption, "reload"))
 		{
 			Command_ReloadSelf(client, args);
-            return Plugin_Handled;
+			return Plugin_Handled;
 		}
 	}
 
@@ -1425,7 +1425,7 @@ public Action:Timer_OneSecond(Handle:timer)
 
 public Action:Command_ReloadSelf(iClient, iArgC)
 {
-	g_bPluginReloaded = false;
+	g_bPluginReloaded = true;
 	ReplyToCommand(iClient, "[SM] The plugin has been reloaded.");
 	PrintToChatAll("[SM] All custom weapons have been reset, the plugin reloaded!");
 	ServerCommand("sm plugins reload customweaponstf");
