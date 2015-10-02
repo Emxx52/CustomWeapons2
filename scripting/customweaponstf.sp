@@ -454,6 +454,7 @@ public Action:Command_Custom(client, args)
 		if (StrEqual(szOption, "reload"))
 		{
 			Command_ReloadSelf(client, args);
+            return Plugin_Handled;
 		}
 	}
 
