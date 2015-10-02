@@ -853,7 +853,7 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 	{
 		KvGotoFirstSubKey(hConfig);
 		do {
-			new String:Att[64], String:Plugin[64], String:Value[64];
+			new String:Att[64], String:Plugin[64], String:Value[PLATFORM_MAX_PATH + 64];
 			KvGetSectionName(hConfig, Att, sizeof(Att));
 			KvGetString(hConfig, "plugin", Plugin, sizeof(Plugin));
 			KvGetString(hConfig, "value", Value, sizeof(Value));
