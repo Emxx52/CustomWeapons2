@@ -10,6 +10,7 @@
 #include <sdkhooks>
 #include <tf2items>
 #include <tf2attributes>
+//#include <morecolors> // wait on translations
 
 #define PLUGIN_VERSION "beta 5"
 
@@ -21,33 +22,34 @@ public Plugin:myinfo = {
 	url = "http://mstr.ca/"
 };
 
+#define MAX_STEAMIDS_PER_WEAPON 5    // How many people's steamIDs can be listed on a weapon to give Self-Made quality to
 #define MAX_STEAMAUTH_LENGTH    21
 #define MAX_COMMUNITYID_LENGTH  18
 
 // TF2 Weapon qualities
 enum 
 {
-    TFQual_None = -1,       // Probably should never actually set an item's quality to this
-    TFQual_Normal = 0,
-    TFQual_NoInspect = 0,   // Players cannot see your attributes
-    TFQual_Rarity1,
-    TFQual_Genuine = 1,
-    TFQual_Rarity2,
-    TFQual_Level = 2,       //  Same color as "Level # Weapon" text in description
-    TFQual_Vintage,
-    TFQual_Rarity3,         //  Is actually 4 - sort of brownish
-    TFQual_Rarity4,
-    TFQual_Unusual = 5,
-    TFQual_Unique,
-    TFQual_Community,
-    TFQual_Developer,
-    TFQual_Selfmade,
-    TFQual_Customized,
-    TFQual_Strange,
-    TFQual_Completed,
-    TFQual_Haunted,         //  13
-    TFQual_Collectors,
-    TFQual_Decorated
+	TFQual_None = -1,       // Probably should never actually set an item's quality to this
+	TFQual_Normal = 0,
+	TFQual_NoInspect = 0,   // Players cannot see your attributes
+	TFQual_Rarity1,
+	TFQual_Genuine = 1,
+	TFQual_Rarity2,
+	TFQual_Level = 2,       //  Same color as "Level # Weapon" text in description
+	TFQual_Vintage,
+	TFQual_Rarity3,         //  Is actually 4 - sort of brownish
+	TFQual_Rarity4,
+	TFQual_Unusual = 5,
+	TFQual_Unique,
+	TFQual_Community,
+	TFQual_Developer,
+	TFQual_Selfmade,
+	TFQual_Customized,
+	TFQual_Strange,
+	TFQual_Completed,
+	TFQual_Haunted,         //  13
+	TFQual_Collectors,
+	TFQual_Decorated
 }
 
 new Handle:aItems[10][5];
@@ -734,19 +736,38 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 	new TFClassType:class = TF2_GetPlayerClass(client);
 	
 	KvRewind(hConfig);
-	new String:name[96], String:baseClass[64], baseIndex, itemQuality, itemLevel, String:logName[64], String:killIcon[64], bool:forcegen, mag, ammo, metal;
+	new String:name[96], String:baseClass[64], baseIndex, itemQuality, itemLevel, String:szSteamIDList[(MAX_STEAMAUTH_LENGTH * MAX_STEAMIDS_PER_WEAPON) + (MAX_STEAMIDS_PER_WEAPON * 2)], String:logName[64], String:killIcon[64], bool:forcegen, mag, ammo, metal;
 	
 	KvGetSectionName(hConfig, name, sizeof(name));
 	KvGetString(hConfig, "baseclass", baseClass, sizeof(baseClass));
 	baseIndex = KvGetNum(hConfig, "baseindex", -1);
-	itemQuality = KvGetNum(hConfig, "quality", -1);
+	itemQuality = KvGetNum(hConfig, "quality", TFQual_Customized);
 	itemLevel = KvGetNum(hConfig, "level", -1);
 	KvGetString(hConfig, "logname", logName, sizeof(logName));
 	KvGetString(hConfig, "killicon", killIcon, sizeof(killIcon));
+	KvGetString(hConfig, "steamids", szSteamIDList, sizeof(szSteamIDList));
 	forcegen = bool:KvGetNum(hConfig, "forcegen", _:false);
 	mag = KvGetNum(hConfig, "mag", -1);
+	if (mag == -1)
+	{
+		mag = KvGetNum(hConfig, "clip", -1); // add support for using clip instead of magazine
+	}
 	ammo = KvGetNum(hConfig, "ammo", -1);
 	metal = KvGetNum(hConfig, "metal", -1);
+
+	decl String:szExplode[5][MAX_STEAMAUTH_LENGTH]; // SteamIDs are separated by commas,,,,
+	ExplodeString(szSteamIDList, ",", szExplode, sizeof(szExplode), sizeof(szExplode[]));
+
+	for (new i = 0; i < MAX_STEAMIDS_PER_WEAPON; i++) // Give selfmade quality to creators of weapons, regardless of whatever quality was set.
+	{
+		if (IsClientID(client, szExplode[i], GetSteamIdAuthType(szExplode[i])))
+		{
+			itemQuality = TFQual_Selfmade;
+			break;
+		}
+	}
+
+	//CPrintToChat(client, "Equipped %s!", name); // Wait on translations
 	
 	new slot = -1;
 	if (KvJumpToKey(hConfig, "classes"))
@@ -817,14 +838,16 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 		TF2Items_SetLevel(hWeapon, 1);
 	}
 	KvRewind(hConfig);
+
+	TF2Items_SetQuality(hWeapon, itemQuality);
 	
-	if (KvJumpToKey(hConfig, "quality")) {
+	/*if (KvJumpToKey(hConfig, "quality")) {    // Pointless check
 		TF2Items_SetQuality(hWeapon, itemQuality);
 	}
 	else {
 		TF2Items_SetQuality(hWeapon, 10);
 	}
-	KvRewind(hConfig);
+	KvRewind(hConfig);*/
 	
 	new numAttributes;
 	if (KvJumpToKey(hConfig, "attributes"))
@@ -1110,17 +1133,17 @@ public OnEntityDestroyed(ent)
 	{	
 		new i = -1;
 		while ((i = FindEntityByClassname(i, "tf_wearable*")) != -1)
-        {
-            if (ent != tiedEntity[i]) continue;
-            if (IsValidClient(wearableOwner[ent]))
-            {
-                TF2_RemoveWearable(wearableOwner[ent], i);
-            }
-            else
-            {
-                AcceptEntityInput(i, "Kill"); // This can cause graphical glitches
-            }
-        }
+		{
+			if (ent != tiedEntity[i]) continue;
+			if (IsValidClient(wearableOwner[ent]))
+			{
+				TF2_RemoveWearable(wearableOwner[ent], i);
+			}
+			else
+			{
+				AcceptEntityInput(i, "Kill"); // This can cause graphical glitches
+			}
+		}
 		hasWearablesTied[ent] = false;
 	}
 	tiedEntity[ent] = 0;
@@ -1148,34 +1171,34 @@ public Action:Event_Hurt(Handle:event, const String:name[], bool:dontBroadcast)
 
 bool:GetValueFromConfig(iClient, iSlot, const String:szKey[], String:szValue[], iszValueSize)
 {
-    new iClass = _:TF2_GetPlayerClass(iClient);
-    new Handle:hConfig = GetArrayCell(aItems[iClass][iSlot], SavedWeapons[iClient][iClass][iSlot]);
-    if (hConfig == INVALID_HANDLE)
-    {
-        return false;
-    }
+	new iClass = _:TF2_GetPlayerClass(iClient);
+	new Handle:hConfig = GetArrayCell(aItems[iClass][iSlot], SavedWeapons[iClient][iClass][iSlot]);
+	if (hConfig == INVALID_HANDLE)
+	{
+		return false;
+	}
 
-    KvRewind(hConfig);
+	KvRewind(hConfig);
 
-    if (StrEqual(szKey, "name"))
-    {
-        return KvGetSectionName(hConfig, szValue, iszValueSize);
-    }
-    else
-    {
-        KvGetString(hConfig, szKey, szValue, iszValueSize);
-    }
+	if (StrEqual(szKey, "name"))
+	{
+		return KvGetSectionName(hConfig, szValue, iszValueSize);
+	}
+	else
+	{
+		KvGetString(hConfig, szKey, szValue, iszValueSize);
+	}
 
-    return false;
+	return false;
 }
 
 public Action:OnTakeDamage(iVictim, &iAtker, &iInflictor, &Float:flDamage, &iDmgType, &iWeapon, Float:vDmgForce[3], Float:vDmgPos[3], iDmgCustom)
 {
-    if (0 < iAtker && iAtker <= MaxClients)
-    {
-        g_iTheWeaponSlotIWasLastHitBy[iVictim] = GetSlotFromPlayerWeapon(iAtker, iWeapon);
-    }
-    return Plugin_Continue;
+	if (0 < iAtker && iAtker <= MaxClients)
+	{
+		g_iTheWeaponSlotIWasLastHitBy[iVictim] = GetSlotFromPlayerWeapon(iAtker, iWeapon);
+	}
+	return Plugin_Continue;
 }
 
 // Displays a menu describing what weapon the victim was killed by
@@ -1196,44 +1219,44 @@ DisplayDeathMenu(iKiller, iVictim, TFClassType:iAtkClass, iAtkSlot)
 
 public Action:Event_Death(Handle:event, const String:name[], bool:dontBroadcast)
 {
-    new client = GetClientOfUserId(GetEventInt(event, "userid"));
-    if (!client)
-    {
-    	return Plugin_Continue;
-    }
+	new client = GetClientOfUserId(GetEventInt(event, "userid"));
+	if (!client)
+	{
+		return Plugin_Continue;
+	}
 
-    new iKiller = GetClientOfUserId(GetEventInt(event, "attacker"));
+	new iKiller = GetClientOfUserId(GetEventInt(event, "attacker"));
 
-    if (iKiller && IsClientInGame(iKiller) && g_iTheWeaponSlotIWasLastHitBy[client] != -1) // TODO: Test this vs environmental deaths and whatnot.
-    {
-        decl String:szWeaponLogClassname[64];
-        GetValueFromConfig(iKiller, g_iTheWeaponSlotIWasLastHitBy[client], "logname", szWeaponLogClassname, sizeof(szWeaponLogClassname));
-        if (szWeaponLogClassname[0] != '\0')
-        {
-            SetEventString(event, "weapon_logclassname", szWeaponLogClassname);
-        }
+	if (iKiller && IsClientInGame(iKiller) && g_iTheWeaponSlotIWasLastHitBy[client] != -1) // TODO: Test this vs environmental deaths and whatnot.
+	{
+		decl String:szWeaponLogClassname[64];
+		GetValueFromConfig(iKiller, g_iTheWeaponSlotIWasLastHitBy[client], "logname", szWeaponLogClassname, sizeof(szWeaponLogClassname));
+		if (szWeaponLogClassname[0] != '\0')
+		{
+			SetEventString(event, "weapon_logclassname", szWeaponLogClassname);
+		}
 
-        // SetEventString(event, "weapon", szKill_Icon); // Not a recommended method, as things like sniper rifles can have multiple kill icons
-    }
+		// SetEventString(event, "weapon", szKill_Icon); // Not a recommended method, as things like sniper rifles can have multiple kill icons
+	}
 
-    g_iTheWeaponSlotIWasLastHitBy[client] = -1;
+	g_iTheWeaponSlotIWasLastHitBy[client] = -1;
 
-    if (GetEventInt(event, "death_flags") & TF_DEATHFLAG_DEADRINGER) return Plugin_Continue;
-    
-    if (!GetConVarBool(cvarKillWearablesOnDeath)) return Plugin_Continue;
+	if (GetEventInt(event, "death_flags") & TF_DEATHFLAG_DEADRINGER) return Plugin_Continue;
+	
+	if (!GetConVarBool(cvarKillWearablesOnDeath)) return Plugin_Continue;
 
-    new i = -1;
-    while ((i = FindEntityByClassname(i, "tf_wearable*")) != -1)
-    {
-        if (!tiedEntity[i]) continue;
-        if (client != GetEntPropEnt(i, Prop_Send, "m_hOwnerEntity")) continue;
-        if (GetEntProp(i, Prop_Send, "m_bDisguiseWearable")) continue;
-        TF2_RemoveWearable(client, i);
-    }
+	new i = -1;
+	while ((i = FindEntityByClassname(i, "tf_wearable*")) != -1)
+	{
+		if (!tiedEntity[i]) continue;
+		if (client != GetEntPropEnt(i, Prop_Send, "m_hOwnerEntity")) continue;
+		if (GetEntProp(i, Prop_Send, "m_bDisguiseWearable")) continue;
+		TF2_RemoveWearable(client, i);
+	}
 
-    DisplayDeathMenu(iKiller, client, TF2_GetPlayerClass(iKiller), g_iTheWeaponSlotIWasLastHitBy[client]);
+	DisplayDeathMenu(iKiller, client, TF2_GetPlayerClass(iKiller), g_iTheWeaponSlotIWasLastHitBy[client]);
 
-    return Plugin_Continue;
+	return Plugin_Continue;
 }
 
 public Menu_Death(Handle:menu, MenuAction:action, client, item)
@@ -1663,14 +1686,14 @@ stock SuperPrecacheSound(String:strPath[], String:strPluginName[] = "")
 // From chdata.inc
 stock GetSlotFromPlayerWeapon(iClient, iWeapon)
 {
-    for (new i = 0; i <= 5; i++)
-    {
-        if (iWeapon == GetPlayerWeaponSlot(iClient, i))
-        {
-            return i;
-        }
-    }
-    return -1;
+	for (new i = 0; i <= 5; i++)
+	{
+		if (iWeapon == GetPlayerWeaponSlot(iClient, i))
+		{
+			return i;
+		}
+	}
+	return -1;
 }
 
 // Chdata: LOL??
@@ -2050,12 +2073,14 @@ stock bool:TF2_SdkStartup()
 	return true;
 }
 
+// Common stocks from chdata.inc below
+
 /*
-    Common check that says whether or not a client index is occupied.
+	Common check that says whether or not a client index is occupied.
 */
 stock bool:IsValidClient(iClient)
 {
-    return (0 < iClient && iClient <= MaxClients && IsClientInGame(iClient));
+	return (0 < iClient && iClient <= MaxClients && IsClientInGame(iClient));
 }
 
 /*
@@ -2065,5 +2090,39 @@ stock bool:IsValidClient(iClient)
 */
 stock bool:IsValidEnp(iEnt)
 {
-    return iEnt > MaxClients && IsValidEntity(iEnt);
+	return iEnt > MaxClients && IsValidEntity(iEnt);
+}
+
+stock bool:IsClientID(iClient, String:szSteamId[MAX_STEAMAUTH_LENGTH], AuthIdType:iAuthId = AuthId_Steam2)
+{
+	if (!IsClientAuthorized(iClient))
+	{
+		return false;
+	}
+
+	decl String:szClientAuth[MAX_STEAMAUTH_LENGTH];
+	GetClientAuthId(iClient, iAuthId, szClientAuth, sizeof(szClientAuth));
+	return StrEqual(szClientAuth, szSteamId);
+}
+
+stock AuthIdType:GetSteamIdAuthType(const String:szId[])
+{
+	if (StrStarts(szId, "STEAM_0:"))
+	{
+		return AuthId_Steam2;
+	}
+	else if (StrStarts(szId, "[U:1:"))
+	{
+		return AuthId_Steam3;
+	}
+	else if (StrStarts(szId, "7656119"))
+	{
+		return AuthId_SteamID64;
+	}
+	return AuthIdType:-1;
+}
+
+stock bool:StrStarts(const String:szStr[], const String:szSubStr[], bool:bCaseSensitive = true)
+{
+	return !StrContains(szStr, szSubStr, bCaseSensitive);
 }
