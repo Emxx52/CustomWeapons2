@@ -67,6 +67,7 @@ new Handle:hSavedWeapons[MAXPLAYERS + 1][10][5];
 new bool:OKToEquipInArena[MAXPLAYERS + 1];
 
 static g_iTheWeaponSlotIWasLastHitBy[MAXPLAYERS + 1] = {-1,...};
+static g_bPluginReloaded = false;
 
 new bool:IsCustom[2049];
 
@@ -131,10 +132,14 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 
 public OnPluginStart()
 {
-	RegAdminCmd("custom", Command_Custom, 0);
-	RegAdminCmd("cus", Command_Custom, 0);
-	RegAdminCmd("c", Command_Custom, 0);
-	RegAdminCmd("custom_addattribute", Command_AddAttribute, ADMFLAG_CHEATS);
+	g_bPluginReloaded = false;
+
+	RegAdminCmd("sm_custom", Command_Custom, 0);
+	RegAdminCmd("sm_cus", Command_Custom, 0);
+	RegAdminCmd("sm_c", Command_Custom, 0);
+	RegAdminCmd("sm_custom_addattribute", Command_AddAttribute, ADMFLAG_CHEATS);
+
+	//RegAdminCmd("sm_creload", Command_ReloadSelf, ADMFLAG_ROOT);
 	
 	cvarEnabled = CreateConVar("sm_customweapons_enable", "1", "Enable Custom Weapons. When set to 0, custom weapons will be removed from all players.");
 	cvarOnlyInSpawn = CreateConVar("sm_customweapons_onlyinspawn", "1", "Custom weapons can only be equipped from within a spawn room.");
@@ -160,6 +165,8 @@ public OnPluginStart()
 	if (IsValidEntity(0)) Event_RoundStart(INVALID_HANDLE, "teamplay_round_start", false);
 	
 	TF2_SdkStartup();
+
+	PrintToChatAll("[SM] Custom Weapons 2 has been updated. Please use /c and a resupply locker to re-equip.");
 }
 
 public OnClientPostAdminCheck(client)
@@ -409,8 +416,14 @@ public OnMapStart()
 
 public OnPluginEnd()
 {
-	RemoveAllCustomWeapons("Your custom weapons have been removed because the Custom Weapons plugin is unloading.");
-	
+	RemoveAllCustomWeapons(); // "Your custom weapons have been removed because the Custom Weapons plugin is unloading."
+
+	if (!g_bPluginReloaded) // Reloaded unexpectedly?! -> else reloaded via the /creload command
+	{
+		// Note: This will play if you manually use sm plugins reload customweaponstf instead of /c reload
+		PrintToChatAll("[SM] Custom Weapons 2 has unexpectedly been unloaded! Functionality disabled.");
+	}
+
 	new String:Dir[PLATFORM_MAX_PATH];
 	BuildPath(Path_SM, Dir, sizeof(Dir), "plugins/customweaponstf");
 	if (!DirExists(Dir)) PrintToServer("[Custom Weapons] WARNING! Custom Weapons' plugin directory (%s) does not exist, so any running attribute plugins will not be unloaded. If you're removing Custom Weapons (goodbye!) any running attribute plugins will likely still show up as <ERROR> in your server's plugin list.", Dir);
@@ -433,6 +446,17 @@ public Action:Command_Custom(client, args)
 		PrintToServer("[Custom Weapons] Custom Weapons is loaded with %i weapons, %i plugins.", weaponcount, plugincount, modelcount);
 		return Plugin_Handled;
 	}
+
+	if (args == 1 && GetAdminFlag(GetUserAdmin(client), Admin_Root)) // Allows server owner to reload the plugin dynamically
+	{
+		decl String:szOption[3];
+		GetCmdArgString(szOption, sizeof(szOption));
+		if (StrEqual(szOption, "reload"))
+		{
+			Command_ReloadSelf(client, args);
+		}
+	}
+
 	CustomMainMenu(client);
 	return Plugin_Handled;
 }
@@ -1406,6 +1430,15 @@ public Action:Timer_OneSecond(Handle:timer)
 	}
 }
 
+public Action:Command_ReloadSelf(iClient, iArgC)
+{
+	g_bPluginReloaded = false;
+	ReplyToCommand(iClient, "[SM] The plugin has been reloaded.");
+	PrintToChatAll("[SM] All custom weapons have been reset, the plugin reloaded!");
+	ServerCommand("sm plugins reload customweaponstf");
+	return Plugin_Handled;
+}
+
 public Action:Command_AddAttribute(client, args)
 {
 	if (args < 3)
@@ -1904,12 +1937,16 @@ stock TF2_GetClassString(TFClassType:class, String:str[], maxlen, bool:proper = 
 stock TF2_GetPlayerClassString(client, String:str[], maxlen, bool:proper = false)
 	TF2_GetClassString(TF2_GetPlayerClass(client), str, maxlen, proper);
 
-stock RemoveAllCustomWeapons(const String:reason[])
+stock RemoveAllCustomWeapons() // const String:reason[]
 {
 	for (new client = 1; client <= MaxClients; client++)
 	{
-		if (!IsClientInGame(client)) continue;
-		new bool:removed, bool:removedSlot[5];
+		if (IsClientInGame(client))
+		{
+			TF2_RegeneratePlayer(client);
+		}
+
+		/*new bool:removed, bool:removedSlot[5];
 		for (new slot = 0; slot <= 4; slot++)
 		{
 			new wep = GetPlayerWeaponSlot(client, slot);
@@ -1924,8 +1961,8 @@ stock RemoveAllCustomWeapons(const String:reason[])
 			if (removedSlot[slot]) continue;
 			ClientCommand(client, "slot%i", slot+1);
 			break;
-		}
-		if (removed) PrintToChat(client, reason);
+		}*/
+		//if (removed) PrintToChat(client, reason);
 	}
 }
 
