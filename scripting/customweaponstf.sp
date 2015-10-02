@@ -10,17 +10,45 @@
 #include <sdkhooks>
 #include <tf2items>
 #include <tf2attributes>
-#include <smlib>
 
 #define PLUGIN_VERSION "beta 5"
 
 public Plugin:myinfo = {
 	name = "Custom Weapons 2",
-	author = "MasterOfTheXP, updated by 404 and Theray070696",
+	author = "MasterOfTheXP, updated by 404, Theray070696, and Chdata",
 	description = "Allows players to use custom-made weapons.",
 	version = PLUGIN_VERSION,
 	url = "http://mstr.ca/"
 };
+
+#define MAX_STEAMAUTH_LENGTH    21
+#define MAX_COMMUNITYID_LENGTH  18
+
+// TF2 Weapon qualities
+enum 
+{
+    TFQual_None = -1,       // Probably should never actually set an item's quality to this
+    TFQual_Normal = 0,
+    TFQual_NoInspect = 0,   // Players cannot see your attributes
+    TFQual_Rarity1,
+    TFQual_Genuine = 1,
+    TFQual_Rarity2,
+    TFQual_Level = 2,       //  Same color as "Level # Weapon" text in description
+    TFQual_Vintage,
+    TFQual_Rarity3,         //  Is actually 4 - sort of brownish
+    TFQual_Rarity4,
+    TFQual_Unusual = 5,
+    TFQual_Unique,
+    TFQual_Community,
+    TFQual_Developer,
+    TFQual_Selfmade,
+    TFQual_Customized,
+    TFQual_Strange,
+    TFQual_Completed,
+    TFQual_Haunted,         //  13
+    TFQual_Collectors,
+    TFQual_Decorated
+}
 
 new Handle:aItems[10][5];
 new Handle:fOnAddAttribute;
@@ -36,9 +64,11 @@ new SavedWeapons[MAXPLAYERS + 1][10][5];
 new Handle:hSavedWeapons[MAXPLAYERS + 1][10][5];
 new bool:OKToEquipInArena[MAXPLAYERS + 1];
 
+static g_iTheWeaponSlotIWasLastHitBy[MAXPLAYERS + 1] = {-1,...};
+
 new bool:IsCustom[2049];
 
-new String:LogName[2049][64];
+new String:LogName[2049][64]; // Look at this gigantic amount of memory wastage
 new String:KillIcon[2049][64];
 new String:WeaponName[2049][10][9][64];
 new String:WeaponDescription[2049][10][9][512];
@@ -116,16 +146,10 @@ public OnPluginStart()
 	
 	HookEvent("post_inventory_application", Event_Resupply);
 	HookEvent("player_hurt", Event_Hurt);
-	HookEvent("player_death", Event_Death);
+	HookEvent("player_death", Event_Death, EventHookMode_Pre);
 	HookEvent("teamplay_round_start", Event_RoundStart);
 	HookEvent("teamplay_round_win", Event_RoundEnd);
 	HookEvent("teamplay_round_stalemate", Event_RoundEnd);
-
-	for (new i = 1; i <= MaxClients; i++)
-	{
-		if (!IsClientInGame(i)) continue;
-		OnClientPutInServer(i);
-	}
 	
 	AddNormalSoundHook(SoundHook);
 	
@@ -136,10 +160,11 @@ public OnPluginStart()
 	TF2_SdkStartup();
 }
 
-public OnClientPutInServer(client)
+public OnClientPostAdminCheck(client)
 {
 	BrowsingClass[client] = TFClass_Unknown;
 	BrowsingSlot[client] = 0;
+	g_iTheWeaponSlotIWasLastHitBy[client] = -1;
 	LookingAtItem[client] = 0;
 	hEquipTimer[client] = INVALID_HANDLE;
 	hBotEquipTimer[client] = INVALID_HANDLE;
@@ -160,6 +185,14 @@ public OnClientPutInServer(client)
 
 public OnMapStart()
 {
+	for (new i = 1; i <= MaxClients; i++) // MaxClients is only guaranteed to be initialized by the time OnMapStart() fires.
+	{
+		if (IsClientInGame(i))
+		{
+			OnClientPostAdminCheck(i);
+		}
+	}
+
 	g_hAllowDownloads = FindConVar("sv_allowdownload");
 	g_hDownloadUrl = FindConVar("sv_downloadurl");
 	
@@ -798,9 +831,9 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 	{
 		KvGotoFirstSubKey(hConfig);
 		do {
-			new String:Plugin[64];
-			KvGetString(hConfig, "plugin", Plugin, sizeof(Plugin));
-			if (!StrEqual(Plugin, "tf2items", false)) continue;
+			new String:szPlugin[64];
+			KvGetString(hConfig, "plugin", szPlugin, sizeof(szPlugin));
+			if (!StrEqual(szPlugin, "tf2items", false)) continue;
 			
 			new String:Att[64], String:Value[64];
 			KvGetSectionName(hConfig, Att, sizeof(Att));
@@ -824,12 +857,12 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 			if (!slot)
 			{
 				switch (GetEntProp(i, Prop_Send, "m_iItemDefinitionIndex"))
-				{	case 405, 608: AcceptEntityInput(i, "Kill");	}
+				{	case 405, 608: TF2_RemoveWearable(client, i);	}
 			}
 			else
 			{
 				switch (GetEntProp(i, Prop_Send, "m_iItemDefinitionIndex"))
-				{	case 57, 131, 133, 231, 406, 444, 642: AcceptEntityInput(i, "Kill");	}
+				{	case 57, 131, 133, 231, 406, 444, 642: TF2_RemoveWearable(client, i);	}
 			}
 		}
 	}
@@ -853,26 +886,26 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 	{
 		KvGotoFirstSubKey(hConfig);
 		do {
-			new String:Att[64], String:Plugin[64], String:Value[PLATFORM_MAX_PATH + 64];
+			new String:Att[64], String:szPlugin[64], String:Value[PLATFORM_MAX_PATH + 64];
 			KvGetSectionName(hConfig, Att, sizeof(Att));
-			KvGetString(hConfig, "plugin", Plugin, sizeof(Plugin));
+			KvGetString(hConfig, "plugin", szPlugin, sizeof(szPlugin));
 			KvGetString(hConfig, "value", Value, sizeof(Value));
 			
-			if (!StrEqual(Plugin, "tf2attributes", false) && !StrEqual(Plugin, "tf2attributes.int", false) && !StrEqual(Plugin, "tf2items", false))
+			if (!StrEqual(szPlugin, "tf2attributes", false) && !StrEqual(szPlugin, "tf2attributes.int", false) && !StrEqual(szPlugin, "tf2items", false))
 			{
 				new Action:act = Plugin_Continue;
 				Call_StartForward(fOnAddAttribute);
 				Call_PushCell(ent);
 				Call_PushCell(client);
 				Call_PushString(Att);
-				Call_PushString(Plugin);
+				Call_PushString(szPlugin);
 				Call_PushString(Value);
 				Call_Finish(act);
-				if (!act) PrintToServer("[Custom Weapons] WARNING! Attribute \"%s\" (value \"%s\" plugin \"%s\") seems to have been ignored by all attributes plugins. It's either an invalid attribute, incorrect plugin, an error occured in the att. plugin, or the att. plugin forgot to return Plugin_Handled.", Att, Value, Plugin);
+				if (!act) PrintToServer("[Custom Weapons] WARNING! Attribute \"%s\" (value \"%s\" plugin \"%s\") seems to have been ignored by all attributes plugins. It's either an invalid attribute, incorrect plugin, an error occured in the att. plugin, or the att. plugin forgot to return Plugin_Handled.", Att, Value, szPlugin);
 			}
-			else if (!StrEqual(Plugin, "tf2items", false))
+			else if (!StrEqual(szPlugin, "tf2items", false))
 			{
-				if (StrEqual(Plugin, "tf2attributes", false)) TF2Attrib_SetByName(ent, Att, StringToFloat(Value));
+				if (StrEqual(szPlugin, "tf2attributes", false)) TF2Attrib_SetByName(ent, Att, StringToFloat(Value));
 				else TF2Attrib_SetByName(ent, Att, Float:StringToInt(Value));
 			}
 			
@@ -916,13 +949,13 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 			{
 				SetEntProp(vm, Prop_Send, "m_fEffects", 0);
 				SetEntProp(vm, Prop_Send, "m_iParentAttachment", attachment);
-				new Float:offs[3], Float:angOffs[3], Float:scale;
+				new Float:offs[3], Float:angOffs[3], Float:flScale;
 				KvGetVector(hConfig, "pos", offs);
 				KvGetVector(hConfig, "ang", angOffs);
-				scale = KvGetFloat(hConfig, "scale", 1.0);
+				flScale = KvGetFloat(hConfig, "scale", 1.0);
 				SetEntPropVector(vm, Prop_Send, "m_vecOrigin", offs);
 				SetEntPropVector(vm, Prop_Send, "m_angRotation", angOffs);
-				if (scale != 1.0) SetEntPropFloat(vm, Prop_Send, "m_flModelScale", scale);
+				if (flScale != 1.0) SetEntPropFloat(vm, Prop_Send, "m_flModelScale", flScale);
 			}
 		}
 	}
@@ -1077,10 +1110,17 @@ public OnEntityDestroyed(ent)
 	{	
 		new i = -1;
 		while ((i = FindEntityByClassname(i, "tf_wearable*")) != -1)
-		{
-			if (ent != tiedEntity[i]) continue;
-			AcceptEntityInput(i, "Kill");
-		}
+        {
+            if (ent != tiedEntity[i]) continue;
+            if (IsValidClient(wearableOwner[ent]))
+            {
+                TF2_RemoveWearable(wearableOwner[ent], i);
+            }
+            else
+            {
+                AcceptEntityInput(i, "Kill"); // This can cause graphical glitches
+            }
+        }
 		hasWearablesTied[ent] = false;
 	}
 	tiedEntity[ent] = 0;
@@ -1106,109 +1146,94 @@ public Action:Event_Hurt(Handle:event, const String:name[], bool:dontBroadcast)
 	if (attacker) OKToEquipInArena[attacker] = false;
 }
 
-public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damagetype, &weapon, Float:damageForce[3], Float:damagePosition[3], damagecustom)
+bool:GetValueFromConfig(iClient, iSlot, const String:szKey[], String:szValue[], iszValueSize)
 {
-	if(victim <= 0) return Plugin_Continue;
-	if(attacker <= 0) return Plugin_Continue;
-	if(victim == attacker) return Plugin_Continue;
-	
-	new Float:health = float(Entity_GetHealth(victim));
-	
-	if(health - damage <= 0)
+    new iClass = _:TF2_GetPlayerClass(iClient);
+    new Handle:hConfig = GetArrayCell(aItems[iClass][iSlot], SavedWeapons[iClient][iClass][iSlot]);
+    if (hConfig == INVALID_HANDLE)
+    {
+        return false;
+    }
+
+    KvRewind(hConfig);
+
+    if (StrEqual(szKey, "name"))
+    {
+        return KvGetSectionName(hConfig, szValue, iszValueSize);
+    }
+    else
+    {
+        KvGetString(hConfig, szKey, szValue, iszValueSize);
+    }
+
+    return false;
+}
+
+public Action:OnTakeDamage(iVictim, &iAtker, &iInflictor, &Float:flDamage, &iDmgType, &iWeapon, Float:vDmgForce[3], Float:vDmgPos[3], iDmgCustom)
+{
+    if (0 < iAtker && iAtker <= MaxClients)
+    {
+        g_iTheWeaponSlotIWasLastHitBy[iVictim] = GetSlotFromPlayerWeapon(iAtker, iWeapon);
+    }
+    return Plugin_Continue;
+}
+
+// Displays a menu describing what weapon the victim was killed by
+DisplayDeathMenu(iKiller, iVictim, TFClassType:iAtkClass, iAtkSlot)
+{
+	if (iAtkSlot == -1 || iAtkClass == TFClass_Unknown || !IsValidClient(iKiller)) // In event_death, iVictim will surely be valid at this point
 	{
-		// Get the slot
-		new slot = GetClientSlot(attacker);
-		decl String:strClassname[PLATFORM_MAX_PATH];
-		if(weapon > 0 && IsValidEdict(weapon))
-		{
-			GetEdictClassname(weapon, strClassname, sizeof(strClassname));
-			slot = GetWeaponSlot(strClassname);
-		} else
-		{
-			if(inflictor > 0 && !Client_IsValid(inflictor) && IsValidEdict(inflictor))
-			{
-				GetEdictClassname(inflictor, strClassname, sizeof(strClassname));
-				slot = GetWeaponSlot(strClassname);
-			}
-		}
-		
-		new TFClassType:class = TF2_GetPlayerClass(attacker);
-		
-		if (weapon != -1 && IsCustom[weapon])
-		{
-			new Handle:menu = CreateMenu(Menu_Death);
-			
-			SetMenuTitle(menu, "%s\n \n%s", WeaponName[attacker][class][slot], WeaponDescription[attacker][class][slot]);
-			AddMenuItem(menu, "exit", "Close");
-			SetMenuPagination(menu, MENU_NO_PAGINATION);
-			SetMenuExitButton(menu, false);
-			
-			DisplayMenu(menu, victim, 4);
-		} else
-		{
-			weapon = GetPlayerWeaponSlot(attacker, slot);
-			
-			if(weapon != -1 && IsCustom[weapon])
-			{
-				new Handle:menu = CreateMenu(Menu_Death);
-				
-				SetMenuTitle(menu, "%s\n \n%s", WeaponName[attacker][class][slot], WeaponDescription[attacker][class][slot]);
-				AddMenuItem(menu, "exit", "Close");
-				SetMenuPagination(menu, MENU_NO_PAGINATION);
-				SetMenuExitButton(menu, false);
-				
-				DisplayMenu(menu, victim, 4);
-			}
-		}
+		return;
 	}
-	
-	return Plugin_Continue;
+
+	new Handle:hMenu = CreateMenu(Menu_Death);
+	SetMenuTitle(hMenu, "%s\n \n%s", WeaponName[iKiller][iAtkClass][iAtkSlot], WeaponDescription[iKiller][iAtkClass][iAtkSlot]);
+	AddMenuItem(hMenu, "exit", "Close");
+	SetMenuPagination(hMenu, MENU_NO_PAGINATION);
+	SetMenuExitButton(hMenu, false);
+	DisplayMenu(hMenu, iVictim, 4); // 4 second lasting menu
 }
 
 public Action:Event_Death(Handle:event, const String:name[], bool:dontBroadcast)
 {
-	new client = GetClientOfUserId(GetEventInt(event, "userid"));
-	if (!Client_IsValid(client)) return;
-	
-	if (GetEventInt(event, "death_flags") & TF_DEATHFLAG_DEADRINGER) return;
-	
-	new i = -1;
-	while ((i = FindEntityByClassname(i, "tf_wearable*")) != -1 && GetConVarBool(cvarKillWearablesOnDeath))
-	{
-		if (!tiedEntity[i]) continue;
-		if (client != GetEntPropEnt(i, Prop_Send, "m_hOwnerEntity")) continue;
-		if (GetEntProp(i, Prop_Send, "m_bDisguiseWearable")) continue;
-		AcceptEntityInput(i, "Kill");
-	}
-	
-	// Not working currently, will fix later.
-	/*new attacker = GetClientOfUserId(GetEventInt(event, "attacker"));
-	if (!Client_IsValid(attacker)) return;
-	if (attacker == client) return;
-	
-	new String:weapon[33];
-	GetEventString(event, "weapon", weapon, sizeof(weapon));
-	
-	new slot = GetWeaponSlot(weapon);
-	new weaponEnt = GetPlayerWeaponSlot(attacker, slot);
-	
-	if(weaponEnt != -1 && IsCustom[weaponEnt])
-	{
-		if(LogName[weaponEnt][0])
-		{
-			SetEventString(event, "weapon", LogName[weaponEnt]);
-		}
-		
-		if(KillIcon[weaponEnt][0])
-		{
-			SetEventString(event, "weapon_logclassname", KillIcon[weaponEnt]);
-		}
-		
-		if(LogName[weaponEnt][0] || KillIcon[weaponEnt][0])
-		{
-			SetEventInt(event, "customkill", 0);
-		}
-	}*/
+    new client = GetClientOfUserId(GetEventInt(event, "userid"));
+    if (!client)
+    {
+    	return Plugin_Continue;
+    }
+
+    new iKiller = GetClientOfUserId(GetEventInt(event, "attacker"));
+
+    if (iKiller && IsClientInGame(iKiller) && g_iTheWeaponSlotIWasLastHitBy[client] != -1) // TODO: Test this vs environmental deaths and whatnot.
+    {
+        decl String:szWeaponLogClassname[64];
+        GetValueFromConfig(iKiller, g_iTheWeaponSlotIWasLastHitBy[client], "logname", szWeaponLogClassname, sizeof(szWeaponLogClassname));
+        if (szWeaponLogClassname[0] != '\0')
+        {
+            SetEventString(event, "weapon_logclassname", szWeaponLogClassname);
+        }
+
+        // SetEventString(event, "weapon", szKill_Icon); // Not a recommended method, as things like sniper rifles can have multiple kill icons
+    }
+
+    g_iTheWeaponSlotIWasLastHitBy[client] = -1;
+
+    if (GetEventInt(event, "death_flags") & TF_DEATHFLAG_DEADRINGER) return Plugin_Continue;
+    
+    if (!GetConVarBool(cvarKillWearablesOnDeath)) return Plugin_Continue;
+
+    new i = -1;
+    while ((i = FindEntityByClassname(i, "tf_wearable*")) != -1)
+    {
+        if (!tiedEntity[i]) continue;
+        if (client != GetEntPropEnt(i, Prop_Send, "m_hOwnerEntity")) continue;
+        if (GetEntProp(i, Prop_Send, "m_bDisguiseWearable")) continue;
+        TF2_RemoveWearable(client, i);
+    }
+
+    DisplayDeathMenu(iKiller, client, TF2_GetPlayerClass(iKiller), g_iTheWeaponSlotIWasLastHitBy[client]);
+
+    return Plugin_Continue;
 }
 
 public Menu_Death(Handle:menu, MenuAction:action, client, item)
@@ -1547,7 +1572,7 @@ public Native_FindItemByName(Handle:plugin, args)
 
 stock GetClientSlot(client)
 {
-	if (!Client_IsValid(client)) return -1;
+	if (!IsValidClient(client)) return -1;
 	if (!IsPlayerAlive(client)) return -1;
 	
 	decl String:strActiveWeapon[32];
@@ -1635,7 +1660,21 @@ stock SuperPrecacheSound(String:strPath[], String:strPluginName[] = "")
 	}
 }
 
-stock GetWeaponSlot(String:strWeapon[])
+// From chdata.inc
+stock GetSlotFromPlayerWeapon(iClient, iWeapon)
+{
+    for (new i = 0; i <= 5; i++)
+    {
+        if (iWeapon == GetPlayerWeaponSlot(iClient, i))
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// Chdata: LOL??
+/*stock GetWeaponSlot(String:strWeapon[])
 {
 	// Scout
 	if (StrEqual(strWeapon, "soda_popper")) return 0;
@@ -1805,7 +1844,7 @@ stock GetWeaponSlot(String:strWeapon[])
 	if (StrEqual(strWeapon, "tf_weapon_invis", false)) return 4;
 	
 	return -2;
-}
+}*/
 
 stock SetAmmo_Weapon(weapon, newAmmo)
 {
@@ -2009,4 +2048,22 @@ stock bool:TF2_SdkStartup()
 	CloseHandle(hGameConf);
 	g_bSdkStarted = true;
 	return true;
+}
+
+/*
+    Common check that says whether or not a client index is occupied.
+*/
+stock bool:IsValidClient(iClient)
+{
+    return (0 < iClient && iClient <= MaxClients && IsClientInGame(iClient));
+}
+
+/*
+	Is a valid entity, but guaranteed not to be the world, or a player.
+
+	"Entity, Non-Player"
+*/
+stock bool:IsValidEnp(iEnt)
+{
+    return iEnt > MaxClients && IsValidEntity(iEnt);
 }
