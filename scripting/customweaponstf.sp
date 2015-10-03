@@ -1238,7 +1238,7 @@ DisplayDeathMenu(iKiller, iVictim, TFClassType:iAtkClass, iAtkSlot)
 		return;
 	}
 
-	new Handle:hMenu = CreateMenu(Menu_Death);
+	new Handle:hMenu = CreateMenu(MenuHandler_Null);
 	SetMenuTitle(hMenu, "%s\n \n%s", WeaponName[iKiller][iAtkClass][iAtkSlot], WeaponDescription[iKiller][iAtkClass][iAtkSlot]);
 	AddMenuItem(hMenu, "exit", "Close");
 	SetMenuPagination(hMenu, MENU_NO_PAGINATION);
@@ -1288,21 +1288,12 @@ public Action:Event_Death(Handle:event, const String:name[], bool:dontBroadcast)
 	return Plugin_Continue;
 }
 
-public Menu_Death(Handle:menu, MenuAction:action, client, item)
+public MenuHandler_Null(Handle:hMenu, MenuAction:iAction, iClient, iParam)
 {
-	if(action == MenuAction_Select)
-	{
-		new String:info[32];
-		GetMenuItem(menu, item, info, sizeof(info));
-		
-		if(StrEqual(info, "exit"))
-		{
-			CloseHandle(menu);
-		}
-	} else if(action == MenuAction_End)
-	{
-		CloseHandle(menu);
-	}
+    if (iAction == MenuAction_End)
+    {
+        CloseHandle(hMenu);
+    }
 }
 
 public Action:Timer_CheckEquip(Handle:timer, any:uid)
