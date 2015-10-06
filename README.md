@@ -184,6 +184,7 @@ You need custom weapons (which usually require custom attributes) in order to ru
 - [Half-Life 2 Weapons (requires Starter Pack)](http://files.mstr.ca/customweapons/HL2Weapons.zip)
 - [WIP Weapon Pack (requires Starter Pack)](http://files.mstr.ca/customweapons/WIPWeapons.zip)
 - [Workshop Weapons Pack](https://forums.alliedmods.net/showpost.php?p=2188941&postcount=246)
+- [Freak Fortress 2 Weapons Pack by MaSerkzn](https://forums.alliedmods.net/showpost.php?p=2350129&postcount=655)
 
 ## Attributes
 - [NergalPak](https://forums.alliedmods.net/showpost.php?p=2121002&postcount=121)
