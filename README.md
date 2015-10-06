@@ -41,21 +41,21 @@ Users marked as "ROOT" or Z flag can use /c reload as an alias to reloading the 
 
 # Planned features (Chdata's TODO List)
 
-* High priority
+* **High priority**
 - Integrate clientprefs + reload player weapons on plugin reset.
 - Load newly added weapons+attributes without plugin reset.
 - Translation phrases
 - Custom wearables! (e.g. Gunboats, Chargin' Targe)
 - Make custom weapons start with the correct clip and ammo by default, unless overriden, via https://forums.alliedmods.net/showthread.php?t=262695
 
-* Low priority
+* **Low priority**
 - Kill icons (this should probably be controlled through a custom attribute plugin as there are varying scenarios in which you may use a variety of different kill icons ... dunno if custom kill icons are possible/easy to do)
 - Native or otherwise to see if a weapon has a certain attribute
 - List registered attributes for devs.
 - The ability to apply/not apply certain attributes if certain cvars (such as hale_enable) are active (Attribute plugin creators can do this on their own, however a standard naming convention should be created like cw2_orion_disable_x_attribute)
 - Auto chat advertisements (just use an chat advert plugin for this ...)
 
-* Completed, unimplemented
+* **Completed, unimplemented**
 - Add lots of confirmation messages such as "Unequipped Weapon Name". (wait on translation phrases)
 - When custom weapons are equipped, display in chat the names of the equipped items. (wait on translation phrases)
 - Split menus by weapon slot. (wait on translation phrases)
