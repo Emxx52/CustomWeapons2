@@ -72,9 +72,11 @@ static g_bPluginReloaded = false;
 new bool:IsCustom[2049];
 
 new String:LogName[2049][64]; // Look at this gigantic amount of memory wastage
-new String:KillIcon[2049][64];
-new String:WeaponName[2049][10][9][64];
-new String:WeaponDescription[2049][10][9][512];
+//new String:KillIcon[2049][64];
+new String:WeaponName[2049][64];
+new String:WeaponDescription[2049][512];
+
+new Handle:ReplacementWeapons[256]; // I don't think people would make more than 256 weapons... And these aren't by entity id, so we don't need 2049.
 
 new Handle:CustomConfig[2049];
 new bool:HasCustomViewmodel[2049];
@@ -389,6 +391,9 @@ public OnMapStart()
 			}
 		}
 	}
+	
+	GetReplacementWeapons();
+	
 	CloseHandle(hDir);
 	
 	if (!weaponcount)
@@ -571,10 +576,6 @@ stock CustomMainMenu(client)
 	
 	BrowsingClass[client] = TFClassType:class;
 	
-	// FIX START
-	//SetMenuPagination(menu, MENU_NO_PAGINATION);
-	// FIX END
-	
 	SetMenuExitButton(menu, true);
 	DisplayMenuAtItem(menu, client, 0, MENU_TIME_FOREVER);
 }
@@ -649,7 +650,7 @@ stock WeaponInfoMenu(client, TFClassType:class, slot, weapon, Float:delay = -1.0
 		if (hWeapon != hSavedWeapons[client][class][slot]) AddMenuItem(menu, "", "Save", ITEMDRAW_DEFAULT);
 		else AddMenuItem(menu, "", "Unsave", ITEMDRAW_DEFAULT);
 	}
-	AddMenuItem(menu, "", "", ITEMDRAW_SPACER);
+	//AddMenuItem(menu, "", "", ITEMDRAW_SPACER); // There was too much empty space in the info menu.
 	//AddMenuItem(menu, "", "Prev Weapon", weapon ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
 	//AddMenuItem(menu, "", "Next Weapon", weapon != GetArraySize(aItems[class][slot])-1 ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
 	SetMenuExitBackButton(menu, true);
@@ -658,8 +659,8 @@ stock WeaponInfoMenu(client, TFClassType:class, slot, weapon, Float:delay = -1.0
 	BrowsingSlot[client] = slot;
 	LookingAtItem[client] = weapon;
 	
-	strcopy(WeaponName[client][class][slot], 64, Name);
-	strcopy(WeaponDescription[client][class][slot], 512, description);
+	strcopy(WeaponName[client], 64, Name);
+	strcopy(WeaponDescription[client], 512, description);
 }
 public WeaponInfoHandler(Handle:menu, MenuAction:action, client, item)
 {
@@ -767,7 +768,7 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 	new TFClassType:class = TF2_GetPlayerClass(client);
 	
 	KvRewind(hConfig);
-	new String:name[96], String:baseClass[64], baseIndex, itemQuality, itemLevel, String:szSteamIDList[(MAX_STEAMAUTH_LENGTH * MAX_STEAMIDS_PER_WEAPON) + (MAX_STEAMIDS_PER_WEAPON * 2)], String:logName[64], String:killIcon[64], bool:forcegen, mag, ammo, metal;
+	new String:name[96], String:baseClass[64], baseIndex, itemQuality, itemLevel, String:szSteamIDList[(MAX_STEAMAUTH_LENGTH * MAX_STEAMIDS_PER_WEAPON) + (MAX_STEAMIDS_PER_WEAPON * 2)], String:logName[64], /*String:killIcon[64],*/ bool:forcegen, mag, ammo, metal;
 	
 	KvGetSectionName(hConfig, name, sizeof(name));
 	KvGetString(hConfig, "baseclass", baseClass, sizeof(baseClass));
@@ -775,7 +776,7 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 	itemQuality = KvGetNum(hConfig, "quality", TFQual_Customized);
 	itemLevel = KvGetNum(hConfig, "level", -1);
 	KvGetString(hConfig, "logname", logName, sizeof(logName));
-	KvGetString(hConfig, "killicon", killIcon, sizeof(killIcon));
+	//KvGetString(hConfig, "killicon", killIcon, sizeof(killIcon));
 	KvGetString(hConfig, "steamids", szSteamIDList, sizeof(szSteamIDList));
 	forcegen = bool:KvGetNum(hConfig, "forcegen", _:false);
 	mag = KvGetNum(hConfig, "mag", -1);
@@ -1052,7 +1053,7 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 	IsCustom[ent] = true;
 	
 	strcopy(LogName[ent], 64, logName);
-	strcopy(KillIcon[ent], 64, killIcon);
+	//strcopy(KillIcon[ent], 64, killIcon);
 	
 	CustomConfig[ent] = hConfig;
 	
@@ -1142,7 +1143,7 @@ public OnEntityDestroyed(ent)
 	if (ent <= 0 || ent > 2048) return;
 	IsCustom[ent] = false;
 	LogName[ent][0] = '\0';
-	KillIcon[ent][0] = '\0';
+	//KillIcon[ent][0] = '\0';
 	CustomConfig[ent] = INVALID_HANDLE;
 	HasCustomViewmodel[ent] = false;
 	ViewmodelOfWeapon[ent] = 0;
@@ -1182,6 +1183,8 @@ public Action:Event_Resupply(Handle:event, const String:name[], bool:dontBroadca
 	if (!GetConVarBool(cvarEnabled)) return;
 	hEquipTimer[client] = CreateTimer(0.0, Timer_CheckEquip, uid, TIMER_FLAG_NO_MAPCHANGE);
 	hBotEquipTimer[client] = CreateTimer(GetRandomFloat(0.0, 1.5), Timer_CheckBotEquip, uid, TIMER_FLAG_NO_MAPCHANGE);
+	
+	CreateTimer(0.01, Timer_ReplaceWeapons, client);
 }
 
 public Action:Event_Hurt(Handle:event, const String:name[], bool:dontBroadcast)
@@ -1239,7 +1242,7 @@ DisplayDeathMenu(iKiller, iVictim, TFClassType:iAtkClass, iAtkSlot)
 	}
 
 	new Handle:hMenu = CreateMenu(MenuHandler_Null);
-	SetMenuTitle(hMenu, "%s\n \n%s", WeaponName[iKiller][iAtkClass][iAtkSlot], WeaponDescription[iKiller][iAtkClass][iAtkSlot]);
+	SetMenuTitle(hMenu, "%s\n \n%s", WeaponName[iKiller], WeaponDescription[iKiller]);
 	AddMenuItem(hMenu, "exit", "Close");
 	SetMenuPagination(hMenu, MENU_NO_PAGINATION);
 	SetMenuExitButton(hMenu, false);
@@ -1308,6 +1311,65 @@ public Action:Timer_CheckEquip(Handle:timer, any:uid)
 	for (new slot = 0; slot <= 4; slot++)
 		if (SavedWeapons[client][class][slot] > -1)
 			GiveCustomWeaponByIndex(client, class, slot, SavedWeapons[client][class][slot], false);
+}
+
+public Action:Timer_ReplaceWeapons(Handle:timer, any:client)
+{
+	if (!client) return;
+	if (!GetConVarBool(cvarEnabled)) return;
+	if (!IsPlayerAlive(client)) return;
+	
+	new Handle:hWeapon = INVALID_HANDLE;
+	new weapon = -1;
+	new iItemDefinitionIndex = -1;
+	new bool:replacedWeapon = false;
+	
+	for(int j = 0; j < 7; j++)
+	{
+		replacedWeapon = false;
+		
+		weapon = GetPlayerWeaponSlot(client, j);
+		
+		if(weapon != -1 && !IsCustom[weapon])
+		{
+			for (int i = 0; i < 256; i++)
+			{
+				if(ReplacementWeapons[i] != INVALID_HANDLE && !replacedWeapon)
+				{
+					hWeapon = ReplacementWeapons[i];
+					
+					iItemDefinitionIndex = GetEntProp(weapon, Prop_Send, "m_iItemDefinitionIndex"); // This should always be above 0 if we get this far.
+					
+					new String:buffer[128];
+					
+					KvRewind(hWeapon);
+					KvGetString(hWeapon, "replacement", buffer, sizeof(buffer));
+					
+					if(buffer[0] == '\0')
+					{
+						KvRewind(hWeapon);
+						KvGetString(hWeapon, "replace", buffer, sizeof(buffer));
+					}
+					
+					new String:replaceIDs[10][9];
+					ExplodeString(buffer, " ", replaceIDs, sizeof(replaceIDs), sizeof(replaceIDs[]));
+					
+					for(int k = 0; k < 10; k++)
+					{
+						if(replaceIDs[k][0] != '\0' && StringToInt(replaceIDs[k]) >= 0 && !replacedWeapon)
+						{
+							if(StringToInt(replaceIDs[k]) == iItemDefinitionIndex)
+							{
+								GiveCustomWeapon(client, hWeapon, false);
+								
+								replacedWeapon = true;
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 public Action:Timer_CheckBotEquip(Handle:timer, any:uid)
@@ -1710,6 +1772,36 @@ stock SuperPrecacheSound(String:strPath[], String:strPluginName[] = "")
 		if(StrEqual(strPluginName, "")) LogError("PRECACHE ERROR: Unable to precache sound at '%s'. No fastdl service detected, and file is not on the server.", strPath);
 		else LogError("PRECACHE ERROR: Unable to precache sound at '%s'. No fastdl service detected, and file is not on the server. It was required by the plugin '%s'", strPath, strPluginName);
 	}
+}
+
+stock GetReplacementWeapons()
+{
+	new weaponID = 0;
+	
+	new String:Root[PLATFORM_MAX_PATH];
+	BuildPath(Path_SM, Root, sizeof(Root), "configs/customweapons");
+	new Handle:hDir = OpenDirectory(Root), String:FileName[PLATFORM_MAX_PATH], FileType:type;
+	
+	while ((ReadDirEntry(hDir, FileName, sizeof(FileName), type)))
+	{
+		if (FileType_File != type) continue;
+		Format(FileName, sizeof(FileName), "%s/%s", Root, FileName);
+		new Handle:hFile = CreateKeyValues("Whyisthisneeded");
+		if (!FileToKeyValues(hFile, FileName))
+		{
+			continue; // We don't need to log an error, as one will have already been printed from the map load/config reloads.
+		}
+		
+		KvRewind(hFile);
+		if(KvJumpToKey(hFile, "replacement") || KvJumpToKey(hFile, "replace"))
+		{
+			ReplacementWeapons[weaponID] = hFile; // Save the weapon config, we will use it to change default weapons.
+			
+			weaponID++; // We only want this incrementing when there is a valid weapon.
+		}
+	}
+	
+	CloseHandle(hDir);
 }
 
 // From chdata.inc
