@@ -90,6 +90,7 @@ The weapon's name goes right at the top, in "quotes".
 - "logname" will be displayed in client consoles when a kill is made with the weapon.
 - "killicon" will be able to change the weapon's icon in the kill feed if it's ever implemented
 - "level" will set the item level
+- "replace" or "replacement" will set what weapon indexs this weapon will overwrite. just gives the weapon, so don't replace a primary with a melee
 - "quality" will set the item quality. Use item quality numbers listed below. Defaults to 10 (Customized). Will always be overwritten by the "steamids" option.
 - "steamids" SteamIDs of the creator(s) of the weapon, separated by ,commas, - Supports STEAM_0 and [U:] type IDs. Matching SteamIDs are given Self-Made quality.
 - "description" is the stat list that players will see when selecting the weapon. \n = Newline. "\n \n" will skip an entire line.
