@@ -12,7 +12,7 @@
 #include <tf2attributes>
 //#include <morecolors> // wait on translations
 
-#define PLUGIN_VERSION "beta 5"
+#define PLUGIN_VERSION "beta 6"
 
 public Plugin:myinfo = {
 	name = "Custom Weapons 2",
