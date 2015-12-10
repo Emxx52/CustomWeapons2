@@ -61,7 +61,11 @@ Users marked as "ROOT" or Z flag can use /c reload as an alias to reloading the 
 * **Completed, unimplemented**
 - Add lots of confirmation messages such as "Unequipped Weapon Name". (wait on translation phrases)
 - When custom weapons are equipped, display in chat the names of the equipped items. (wait on translation phrases)
-- Split menus by weapon slot. (wait on translation phrases)
+
+* **Completed**
+- SteamID keyvalue to force "Self Made" quality. Supports multiple steamids.
+- weapon_logclassname overwriting on kill
+- Split menus by weapon slot.
 
 Example naming scheme for translation phrases will be as follows:
 

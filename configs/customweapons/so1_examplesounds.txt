@@ -1,0 +1,30 @@
+"example"
+{
+	"classes"
+	{
+		"soldier"	"1"
+	}
+	"baseclass"		"shotgun_soldier"
+	"baseindex"		"10"
+	"mag"			"3"
+	"nobots"		"1"
+	"quality"		"6"
+	"steamids"		"STEAM_0:1:23019195,STEAM_0:1:15112290,STEAM_0:1:26402886"
+	"logname"		"example"
+	"description"	"example"
+	"attributes"
+	{
+		"damage penalty"
+		{
+			"plugin"	"tf2attributes"
+			"value"		"1.0"
+		}
+	}
+	"sound"
+	{
+		"player"
+		{
+			"onfire"	"ambient/medieval_falcon.wav" // Instead of "replace", "onfire" will allow the sound to play over the normal firing sounds instead of replacing them.
+		}
+	}
+}
