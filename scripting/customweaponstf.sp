@@ -182,6 +182,8 @@ enum // Collision_Group_t in const.h
 };
 #endif
 
+//#define TRYWEARABLES
+
 new Handle:aItems[TF_MAX_CLASSES][MAX_WEAPONSLOTS];
 new Handle:fOnAddAttribute;
 new Handle:fOnWeaponGive;
@@ -741,24 +743,141 @@ CustomMainMenu(client)
     //DisplayMenuAtItem(menu, client, 0, MENU_TIME_FOREVER); // Why set it to the first item when that already happens...?
 }
 
-public CustomMainHandler(Handle:menu, MenuAction:action, client, item)
+public CustomMainHandler(Handle:hMenu, MenuAction:iAction, iClient, iItem)
 {
-    if (action == MenuAction_Select)
+    switch (iAction)
     {
-        if (BrowsingClass[client] != TF2_GetPlayerClass(client))
+        case MenuAction_Select:
         {
-            CustomMainMenu(client);
-            return;
+            if (BrowsingClass[iClient] != TF2_GetPlayerClass(iClient))
+            {
+                CustomMainMenu(iClient);
+                return;
+            }
+
+            new String:szSlot[2];
+            GetMenuItem(hMenu, iItem, szSlot, sizeof(szSlot));
+            new iSlot = StringToInt(szSlot);
+
+            WeaponSelectMenu(iClient, iSlot);
         }
-        new String:sel[20], String:sIdxs[2][10];
-        GetMenuItem(menu, item, sel, sizeof(sel));
-        ExplodeString(sel, " ", sIdxs, sizeof(sIdxs), sizeof(sIdxs));
-        WeaponInfoMenu(client, BrowsingClass[client], StringToInt(sIdxs[0]), StringToInt(sIdxs[1]));
+        case MenuAction_End:
+        {
+            CloseHandle(hMenu);
+        }
     }
-    else if (action == MenuAction_End) CloseHandle(menu);
 }
 
-stock WeaponInfoMenu(client, TFClassType:class, slot, weapon, Float:delay = -1.0)
+WeaponSelectMenu(iClient, iSlot)
+{
+    new counts[5];
+    counts[iSlot] = GetArraySize(aItems[BrowsingClass[iClient]][iSlot]);
+
+    //if (!counts[iSlot]) // If there's no weapons for that slot, skip making a menu for it.
+    //{
+    //    continue; // This should never be possible, as we already checked this before making this entire menu, so comment it out
+    //}
+
+    new Handle:hWeaponSelectMenu = CreateMenu(WeaponSelectHandler);
+
+    switch (iSlot)
+    {
+        case 0: SetMenuTitle(hWeaponSelectMenu, "- Primary Custom Weapons -");   // First string is the weapon slot it applies to, second string is what's displayed in the menu.
+        case 1: SetMenuTitle(hWeaponSelectMenu, "- Secondary Custom Weapons -"); // This is necessary because it's possible to have custom primaries, but no custom secondaries.
+        case 2: SetMenuTitle(hWeaponSelectMenu, "- Melee Custom Weapons -");
+        case 3:
+        {
+            switch (BrowsingClass[iClient])
+            {
+                case TFClass_Engineer:  SetMenuTitle(hWeaponSelectMenu, "- Build PDA Custom Weapons -");
+                case TFClass_Spy:       SetMenuTitle(hWeaponSelectMenu, "- Disguise Kit Custom Weapons -");
+            }
+        }
+        case 4:
+        {
+            switch (BrowsingClass[iClient])
+            {
+                case TFClass_Engineer:  SetMenuTitle(hWeaponSelectMenu, "- Destroy PDA Custom Weapons -");
+                case TFClass_Spy:       SetMenuTitle(hWeaponSelectMenu, "- Cloak Custom Weapons -");
+            }
+        }
+    }
+
+    new saved = SavedWeapons[iClient][BrowsingClass[iClient]][iSlot];
+    for (new i = 0; i < counts[iSlot]; i++) // Loop through hte number of weapons for this slot
+    {
+        new Handle:hWeapon = GetArrayCell(aItems[BrowsingClass[iClient]][iSlot], i), String:Name[64], String:Index[10]; // Get the name of the weapon
+        KvRewind(hWeapon);
+        KvGetSectionName(hWeapon, Name, sizeof(Name));
+        if (saved == i) Format(Name, sizeof(Name), "%s ✓", Name);
+        Format(Index, sizeof(Index), "%i %i", iSlot, i);
+        /*if (i == counts[iSlot]-1 && iSlot < 4)
+        {
+            new nextslot;
+            for (new j = iSlot+1; j <= 4; j++)
+            {
+                if (counts[j])
+                {
+                    nextslot = j;
+                    break;
+                }
+            }
+            switch (nextslot)
+            {
+                case 1: Format(Name, sizeof(Name), "%s\n- Secondary -", Name);
+                case 2: Format(Name, sizeof(Name), "%s\n- Melee -", Name);
+                case 3: Format(Name, sizeof(Name), "%s\n- PDA -", Name);
+                case 4: Format(Name, sizeof(Name), "%s\n- PDA 2 -", Name);
+            }
+        }*/
+        AddMenuItem(hWeaponSelectMenu, Index, Name);
+    }
+
+    SetMenuExitBackButton(hWeaponSelectMenu, true);
+    //SetMenuPagination(hWeaponSelectMenu, MENU_NO_PAGINATION);
+    //SetMenuExitButton(hWeaponSelectMenu, true);
+
+    DisplayMenu(hWeaponSelectMenu, iClient, MENU_TIME_FOREVER);
+}
+
+public WeaponSelectHandler(Handle:hMenu, MenuAction:iAction, iClient, iItem)
+{
+    switch (iAction)
+    {
+        case MenuAction_Select:
+        {
+            if (BrowsingClass[iClient] != TF2_GetPlayerClass(iClient))
+            {
+                CustomMainMenu(iClient);
+                return;
+            }
+            new String:sel[20], String:sIdxs[2][10];
+            GetMenuItem(hMenu, iItem, sel, sizeof(sel));
+
+            if (StringToInt(sel) == -1) // Chose to return to Main menu.
+            {
+                CustomMainMenu(iClient);
+                return;
+            }
+
+            ExplodeString(sel, " ", sIdxs, sizeof(sIdxs), sizeof(sIdxs));
+            WeaponInfoMenu(iClient, BrowsingClass[iClient], StringToInt(sIdxs[0]), StringToInt(sIdxs[1]));
+        }
+        case MenuAction_End:
+        {
+            CloseHandle(hMenu);
+        }
+        case MenuAction_Cancel:
+        {
+            if (iItem == MenuCancel_ExitBack)
+            {
+                CustomMainMenu(iClient);
+            }
+        }
+    }
+}
+
+WeaponInfoMenu(client, TFClassType:class, slot, weapon, Float:delay = -1.0)
 {
     if (!GetConVarBool(cvarMenu)) return;
     if (delay != -1.0)
@@ -812,95 +931,117 @@ stock WeaponInfoMenu(client, TFClassType:class, slot, weapon, Float:delay = -1.0
         if (hWeapon != hSavedWeapons[client][class][slot]) AddMenuItem(menu, "", "Save", ITEMDRAW_DEFAULT);
         else AddMenuItem(menu, "", "Unsave", ITEMDRAW_DEFAULT);
     }
-    //AddMenuItem(menu, "", "", ITEMDRAW_SPACER); // There was too much empty space in the info menu.
-    //AddMenuItem(menu, "", "Prev Weapon", weapon ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
-    //AddMenuItem(menu, "", "Next Weapon", weapon != GetArraySize(aItems[class][slot])-1 ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
+    AddMenuItem(menu, "", "", ITEMDRAW_SPACER);
+    AddMenuItem(menu, "", "Prev Weapon", weapon ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
+    AddMenuItem(menu, "", "Next Weapon", weapon != GetArraySize(aItems[class][slot])-1 ? ITEMDRAW_DEFAULT : ITEMDRAW_DISABLED);
     SetMenuExitBackButton(menu, true);
     DisplayMenu(menu, client, MENU_TIME_FOREVER);
     BrowsingClass[client] = class;
     BrowsingSlot[client] = slot;
     LookingAtItem[client] = weapon;
-    
-    strcopy(WeaponName[client], 64, Name);
-    strcopy(WeaponDescription[client], 512, description);
+
+    strcopy(WeaponName[client][class][slot], sizeof(WeaponName[][][]), Name);
+    strcopy(WeaponDescription[client][class][slot], sizeof(WeaponDescription[][][]), description);
 }
+
 public WeaponInfoHandler(Handle:menu, MenuAction:action, client, item)
 {
-    if (action == MenuAction_Cancel && item == MenuCancel_ExitBack)
+    switch (action)
     {
-        CustomMainMenu(client);
-    }
-    else if (action == MenuAction_Select)
-    {
-        switch (item)
+        case MenuAction_Cancel:
         {
-            case 0:
+            if (item == MenuCancel_ExitBack)
             {
-                new TFClassType:class = TF2_GetPlayerClass(client);
-                new onlyteam = GetConVarInt(cvarOnlyTeam);
-                
-                if (!IsPlayerAlive(client))
-                {
-                    PrintToChat(client, "You must be alive in order to equip custom weapons.");
-//                  return;
-                }
-                else if (!InRespawnRoom[client] && GetConVarBool(cvarOnlyInSpawn) && !IsArenaActive())
-                {
-                    PrintToChat(client, "You must be in a resupply room order to equip custom weapons.");
-//                  return;
-                }
-                else if (IsArenaActive() && (!OKToEquipInArena[client] || arenaEquipUntil < GetTickedTime()))
-                {
-                    PrintToChat(client, "You can only equip custom weapons immediately after spawning in Arena Mode.");
-//                  return;
-                }
-                else if (onlyteam && onlyteam != GetClientTeam(client))
-                {
-                    PrintToChat(client, "Your team can't equip custom weapons.");
-//                  return;
-                }
-                else if (DoesClientAlreadyHaveCustomWeapon(client, GetArrayCell(aItems[class][BrowsingSlot[client]], LookingAtItem[client])))
-                {
-//                  PrintToChat(client, "You already have that weapon equipped.");
-                }
-                else GiveCustomWeaponByIndex(client, class, BrowsingSlot[client], LookingAtItem[client]);
-                WeaponInfoMenu(client, class, BrowsingSlot[client], LookingAtItem[client], 0.2);
+                WeaponSelectMenu(client, BrowsingSlot[client]);
             }
-            case 1:
+        }
+        case MenuAction_Select:
+        {
+            switch (item)
             {
-                new TFClassType:class = BrowsingClass[client];
-                new slot = BrowsingSlot[client];
-                new index = LookingAtItem[client];
-                new onlyteam = GetConVarInt(cvarOnlyTeam);
-                
-                if (index != SavedWeapons[client][class][slot])
+                case 0:
                 {
-                    SavedWeapons[client][class][slot] = index;
-                    hSavedWeapons[client][class][slot] = GetArrayCell(aItems[class][slot], index);
-                    new bool:equipped, wep = GetPlayerWeaponSlot(client, slot);
-                    if (wep > -1)
+                    new TFClassType:class = TF2_GetPlayerClass(client);
+                    new onlyteam = GetConVarInt(cvarOnlyTeam);
+                    
+                    if (!IsPlayerAlive(client))
                     {
-                        if (IsCustom[wep] && CustomConfig[wep] == hSavedWeapons[client][class][slot])
-                            equipped = true;
-                    } // This might be confusing, but here we go...
-                    if (!equipped && IsPlayerAlive(client) && // They don't have it equipped, they're alive, and...
-                    (!onlyteam || onlyteam == GetClientTeam(client)) && // "OnlyTeam" is off, or their team is the only team that can equip, and...
-                    (InRespawnRoom[client] || !GetConVarBool(cvarOnlyInSpawn) || // they're in a respawn room, OR they can equip weapons whenever, OR...
-                    (IsArenaActive() && OKToEquipInArena[client] && arenaEquipUntil >= GetTickedTime()))) // it's the beginning of an Arena round.
-                        GiveCustomWeaponByIndex(client, class, slot, index);
+                        PrintToChat(client, "You must be alive in order to equip custom weapons.");
+    //                  return;
+                    }
+                    else if (!InRespawnRoom[client] && GetConVarBool(cvarOnlyInSpawn) && !IsArenaActive())
+                    {
+                        PrintToChat(client, "You must be in a resupply room order to equip custom weapons.");
+    //                  return;
+                    }
+                    else if (IsArenaActive() && (!OKToEquipInArena[client] || arenaEquipUntil < GetTickedTime()))
+                    {
+                        PrintToChat(client, "You can only equip custom weapons immediately after spawning in Arena Mode.");
+    //                  return;
+                    }
+                    else if (onlyteam && onlyteam != GetClientTeam(client))
+                    {
+                        PrintToChat(client, "Your team can't equip custom weapons.");
+    //                  return;
+                    }
+                    else if (DoesClientAlreadyHaveCustomWeapon(client, GetArrayCell(aItems[class][BrowsingSlot[client]], LookingAtItem[client])))
+                    {
+    //                  PrintToChat(client, "You already have that weapon equipped.");
+                    }
+                    else
+                    {
+                        GiveCustomWeaponByIndex(client, class, BrowsingSlot[client], LookingAtItem[client]);
+                    }
+                    WeaponInfoMenu(client, class, BrowsingSlot[client], LookingAtItem[client], 0.2);
                 }
-                else
+                case 1:
                 {
-                    SavedWeapons[client][class][slot] = -1;
-                    hSavedWeapons[client][class][slot] = INVALID_HANDLE;
+                    new TFClassType:class = BrowsingClass[client];
+                    new slot = BrowsingSlot[client];
+                    new index = LookingAtItem[client];
+                    new onlyteam = GetConVarInt(cvarOnlyTeam);
+                    
+                    if (index != SavedWeapons[client][class][slot])
+                    {
+                        SavedWeapons[client][class][slot] = index;
+                        hSavedWeapons[client][class][slot] = GetArrayCell(aItems[class][slot], index);
+                        new bool:equipped, wep = GetPlayerWeaponSlot(client, slot);
+                        if (wep > -1)
+                        {
+                            if (IsCustom[wep] && CustomConfig[wep] == hSavedWeapons[client][class][slot])
+                                equipped = true;
+                        } // This might be confusing, but here we go...
+                        if (!equipped && IsPlayerAlive(client) && // They don't have it equipped, they're alive, and...
+                        (!onlyteam || onlyteam == GetClientTeam(client)) && // "OnlyTeam" is off, or their team is the only team that can equip, and...
+                        (InRespawnRoom[client] || !GetConVarBool(cvarOnlyInSpawn) || // they're in a respawn room, OR they can equip weapons whenever, OR...
+                        (IsArenaActive() && OKToEquipInArena[client] && arenaEquipUntil >= GetTickedTime()))) // it's the beginning of an Arena round.
+                            GiveCustomWeaponByIndex(client, class, slot, index);
+                    }
+                    else // This is where we 'unsave' a weapon
+                    {
+                        SavedWeapons[client][class][slot] = -1;
+                        hSavedWeapons[client][class][slot] = INVALID_HANDLE;
+                        WeaponName[client][class][slot][0] = '\0';
+
+                        g_szSoundOnFire[client][class][slot][0] = '\0';
+
+                        g_szSoundOnSpinUp[client][0] = '\0';
+                        g_szSoundOnSpinDown[client][0] = '\0';
+                        g_szSoundOnHeavyFire[client][0] = '\0';
+                        g_szSoundOnRev[client][0] = '\0';
+
+                    }
+                    WeaponInfoMenu(client, class, slot, index, 0.2);
                 }
-                WeaponInfoMenu(client, class, slot, index, 0.2);
+                case 3: WeaponInfoMenu(client, BrowsingClass[client], BrowsingSlot[client], LookingAtItem[client] - 1);
+                case 4: WeaponInfoMenu(client, BrowsingClass[client], BrowsingSlot[client], LookingAtItem[client] + 1);
             }
-            //case 3: WeaponInfoMenu(client, BrowsingClass[client], BrowsingSlot[client], LookingAtItem[client] - 1);
-            //case 4: WeaponInfoMenu(client, BrowsingClass[client], BrowsingSlot[client], LookingAtItem[client] + 1);
+        }
+        case MenuAction_End:
+        {
+            CloseHandle(menu);
         }
     }
-    else if (action == MenuAction_End) CloseHandle(menu);
 }
 
 public Action:Timer_WeaponInfoMenu(Handle:timer, Handle:data)
@@ -930,14 +1071,14 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
     new TFClassType:class = TF2_GetPlayerClass(client);
     
     KvRewind(hConfig);
-    new String:name[96], String:baseClass[64], baseIndex, itemQuality, itemLevel, String:szSteamIDList[(MAX_STEAMAUTH_LENGTH * MAX_STEAMIDS_PER_WEAPON) + (MAX_STEAMIDS_PER_WEAPON * 2)], String:logName[64], /*String:killIcon[64],*/ bool:forcegen, mag, ammo, metal;
+    new String:name[96], String:baseClass[64], baseIndex, itemQuality, itemLevel, String:szSteamIDList[(MAX_STEAMAUTH_LENGTH * MAX_STEAMIDS_PER_WEAPON) + (MAX_STEAMIDS_PER_WEAPON * 2)], bool:forcegen, mag, ammo, metal; // String:logName[64], String:killIcon[64], 
     
     KvGetSectionName(hConfig, name, sizeof(name));
     KvGetString(hConfig, "baseclass", baseClass, sizeof(baseClass));
     baseIndex = KvGetNum(hConfig, "baseindex", -1);
     itemQuality = KvGetNum(hConfig, "quality", TFQual_Customized);
     itemLevel = KvGetNum(hConfig, "level", -1);
-    KvGetString(hConfig, "logname", logName, sizeof(logName));
+    //KvGetString(hConfig, "logname", logName, sizeof(logName));
     //KvGetString(hConfig, "killicon", killIcon, sizeof(killIcon));
     KvGetString(hConfig, "steamids", szSteamIDList, sizeof(szSteamIDList));
     forcegen = bool:KvGetNum(hConfig, "forcegen", _:false);
@@ -961,7 +1102,7 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
         }
     }
 
-    //CPrintToChat(client, "Equipped %s!", name); // Wait on translations
+    //PrintToChat(client, "[SM] Equipped {green}%s{default}!", name);
     
     new slot = -1;
     if (KvJumpToKey(hConfig, "classes"))
@@ -978,10 +1119,19 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
                 if (slot != -1) break;
             }
         }
-        if (slot == -1) ThrowError("Slot could not be determined for weapon \"%s\"", name);
+        if (slot == -1)
+        {
+            ThrowError("Slot could not be determined for weapon \"%s\"", name);
+        }
     }
     KvRewind(hConfig);
-    
+
+    new Action:act = Plugin_Continue;
+    Call_StartForward(fBeforeWeaponGive);
+    Call_PushCell(client);
+    Call_PushCell(slot);
+    Call_Finish(act);
+
     if (ammo == -1)
     {
         if (KvJumpToKey(hConfig, "ammo-classes"))
@@ -992,32 +1142,61 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
         }
         KvRewind(hConfig);
     }
-    
-    if (StrEqual(baseClass, "saxxy", false))
-        switch (class)
+
+#if defined TRYWEARABLES
+    new bool:bWearable = false;
+
+    if (StrEqual(baseClass, "wearable_demoshield", false))
+    {
+        bWearable = bool:2;
+    }
+    else if (StrEqual(baseClass, "wearable", false))
+    {
+        bWearable = true;
+    }
+
+    if (!bWearable)
+    {
+#endif
+        if (StrEqual(baseClass, "saxxy", false))
         {
-            case TFClass_Scout: Format(baseClass, sizeof(baseClass), "bat");
-            case TFClass_Soldier: Format(baseClass, sizeof(baseClass), "shovel");
-            case TFClass_DemoMan: Format(baseClass, sizeof(baseClass), "bottle");
-            case TFClass_Engineer: Format(baseClass, sizeof(baseClass), "wrench");
-            case TFClass_Medic: Format(baseClass, sizeof(baseClass), "bonesaw");
-            case TFClass_Sniper: Format(baseClass, sizeof(baseClass), "club");
-            case TFClass_Spy: Format(baseClass, sizeof(baseClass), "knife");
-            default: Format(baseClass, sizeof(baseClass), "fireaxe");
+            switch (class)
+            {
+                case TFClass_Scout: Format(baseClass, sizeof(baseClass), "bat");
+                case TFClass_Soldier: Format(baseClass, sizeof(baseClass), "shovel");
+                case TFClass_DemoMan: Format(baseClass, sizeof(baseClass), "bottle");
+                case TFClass_Engineer: Format(baseClass, sizeof(baseClass), "wrench");
+                case TFClass_Medic: Format(baseClass, sizeof(baseClass), "bonesaw");
+                case TFClass_Sniper: Format(baseClass, sizeof(baseClass), "club");
+                case TFClass_Spy: Format(baseClass, sizeof(baseClass), "knife");
+                default: Format(baseClass, sizeof(baseClass), "fireaxe");
+            }
         }
-    else if (StrEqual(baseClass, "shotgun", false))
-        switch (class)
+        else if (StrEqual(baseClass, "shotgun", false))
         {
-            case TFClass_Scout: Format(baseClass, sizeof(baseClass), "scattergun");
-            case TFClass_Soldier, TFClass_DemoMan: Format(baseClass, sizeof(baseClass), "shotgun_soldier");
-            case TFClass_Pyro: Format(baseClass, sizeof(baseClass), "shotgun_pyro");
-            case TFClass_Heavy: Format(baseClass, sizeof(baseClass), "shotgun_hwg");
-            default: Format(baseClass, sizeof(baseClass), "shotgun_primary");
+            switch (class)
+            {
+                case TFClass_Scout: Format(baseClass, sizeof(baseClass), "scattergun");
+                case TFClass_Soldier, TFClass_DemoMan: Format(baseClass, sizeof(baseClass), "shotgun_soldier");
+                case TFClass_Pyro: Format(baseClass, sizeof(baseClass), "shotgun_pyro");
+                case TFClass_Heavy: Format(baseClass, sizeof(baseClass), "shotgun_hwg");
+                default: Format(baseClass, sizeof(baseClass), "shotgun_primary");
+            }
         }
-    else if (StrEqual(baseClass, "pistol", false) &&
-            TFClass_Scout == class) Format(baseClass, sizeof(baseClass), "pistol_scout");
-    
-    Format(baseClass, sizeof(baseClass), "tf_weapon_%s", baseClass);
+        else if (StrEqual(baseClass, "pistol", false) && TFClass_Scout == class)
+        {
+            Format(baseClass, sizeof(baseClass), "pistol_scout");
+        }
+
+        Format(baseClass, sizeof(baseClass), "tf_weapon_%s", baseClass);
+
+#if defined TRYWEARABLES
+    }
+    else
+    {
+        Format(baseClass, sizeof(baseClass), "tf_%s", baseClass);
+    }
+#endif
     
     new flags = OVERRIDE_ALL;
     if (forcegen) flags |= FORCE_GENERATION;
@@ -1034,7 +1213,15 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
     KvRewind(hConfig);
 
     TF2Items_SetQuality(hWeapon, itemQuality);
-
+    
+    /*if (KvJumpToKey(hConfig, "quality")) {    // Pointless check
+        TF2Items_SetQuality(hWeapon, itemQuality);
+    }
+    else {
+        TF2Items_SetQuality(hWeapon, 10);
+    }
+    KvRewind(hConfig);*/
+    
     new numAttributes;
     if (KvJumpToKey(hConfig, "attributes"))
     {
@@ -1056,7 +1243,7 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
     TF2Items_SetNumAttributes(hWeapon, numAttributes);
     
     TF2_RemoveWeaponSlot(client, slot);
-    if (!slot || slot == 1)
+    if (!slot || slot == 1) // primary and secondary
     {
         new i = -1;
         while ((i = FindEntityByClassname(i, "tf_wearable*")) != -1)
@@ -1071,16 +1258,117 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
             else
             {
                 switch (GetEntProp(i, Prop_Send, "m_iItemDefinitionIndex"))
-                {   case 57, 131, 133, 231, 406, 444, 642: TF2_RemoveWearable(client, i);   }
+                {   case 57, 231, 642, 133, 444, 131, 406, 1099, 1144: TF2_RemoveWearable(client, i);   }
             }
         }
     }
     
     new ent = TF2Items_GiveNamedItem(client, hWeapon);
     CloseHandle(hWeapon);
-    
-    if (ammo != -1) SetAmmo_Weapon(ent, ammo);
-    EquipPlayerWeapon(client, ent);
+
+#if defined TRYWEARABLES
+    g_iEntRefOfCustomWearable[client][slot] = -1;
+
+    if (bWearable)
+    {
+        switch (bWearable)
+        {
+            case 2:
+            {
+                if (KvJumpToKey(hConfig, "worldmodel"))
+                {
+                    decl String:ModelName[PLATFORM_MAX_PATH];
+                    KvGetString(hConfig, "modelname", ModelName, sizeof(ModelName));
+                    if (ModelName[0] != '\0' && FileExists(ModelName, true))
+                    {
+                        SetModelIndex(ent, ModelName);
+                        CreateWearable(client, ModelName, true);
+                        /*SetEntityRenderMode(ent, RENDER_TRANSCOLOR); // This doesn't block the firstperson one
+                        SetEntityRenderColor(ent, 0, 0, 0, 0);
+
+                        CreateWearable(client, ModelName, false); // So many wearables ...
+                        */
+                    }
+                }
+                KvRewind(hConfig);
+            }
+            case 1:
+            {
+                if (KvJumpToKey(hConfig, "worldmodel"))
+                {
+                    decl String:ModelName[PLATFORM_MAX_PATH];
+                    KvGetString(hConfig, "modelname", ModelName, sizeof(ModelName));
+                    if (ModelName[0] != '\0' && FileExists(ModelName, true))
+                    {
+                        SetModelIndex(ent, ModelName);
+                        g_iEntRefOfCustomWearable[client][slot] = EntIndexToEntRef(ent); // CreateWearable(client, ModelName, false)
+                    }
+
+                    /*new replace = KvGetNum(hConfig, "replace", 1);
+                    switch (replace)
+                    {
+                        case 1:
+                        {
+                            SetEntityRenderMode(ent, RENDER_TRANSCOLOR);
+                            SetEntityRenderColor(ent, 0, 0, 0, 0);
+                        }
+                        case 2:
+                        {
+                            SetEntPropFloat(ent, Prop_Send, "m_flModelScale", 0.0);
+                        }
+                    }*/
+                }
+                KvRewind(hConfig);
+
+                /*if (KvJumpToKey(hConfig, "stabbedmodel"))
+                {
+                    decl String:szStabModel[PLATFORM_MAX_PATH];
+                    KvGetString(hFile, "modelname", szStabModel, sizeof(szStabModel));
+                    
+                    if (szStabModel[0] != '\0' && FileExists(szStabModel, true))
+                    {
+                        strcopy(g_szHasCustomRazorback[iClient][iSlot], sizeof(g_szHasCustomRazorback[][]), szStabModel)
+                    }
+                }
+                else
+                {
+                    g_szHasCustomRazorback[iClient][iSlot][0] = '\0';
+                }*/
+
+                //KvRewind(hConfig);
+            }
+        }
+        TF2_EquipWearable(client, ent);
+
+        ClientCommand(client, "slot3"); // Switch to melee
+        OnWeaponSwitch(client, GetPlayerWeaponSlot(client, TFWeaponSlot_Melee));
+
+        /*new iMelee = GetPlayerWeaponSlot(client, TFWeaponSlot_Melee);
+        if (iMelee != -1)
+        {
+            new extraWearable = GetEntPropEnt(iMelee, Prop_Send, "m_hExtraWearableViewModel");
+            new String:szName[MAX_CLASSNAME] = "null";
+            if (extraWearable != -1)
+            {
+                GetName(extraWearable, szName, sizeof(szName));
+                PrintToChatAll("extrawearable %s %i", szName, extraWearable);
+            }
+        }*/
+    }
+    else
+    {
+#endif
+        EquipPlayerWeapon(client, ent);
+#if defined TRYWEARABLES
+    }
+#endif
+
+    if (itemQuality == TFQual_Selfmade && !KvJumpToKey(hConfig, "nosparkle")) // If nosparkle is defined at all, it'll block adding the two attributes - useful if we need to conserve on the 15 attribute limit or if you use attach particle for something else
+    {
+        TF2Attrib_SetByName(ent, "attach particle effect", 4.0);
+        TF2Attrib_SetByName(ent, "selfmade description", 1.0);
+    }
+
     if (mag != -1) SetClip_Weapon(ent, mag);
     if (ammo != -1) SetAmmo_Weapon(ent, ammo);
     if (metal != -1) SetEntProp(client, Prop_Data, "m_iAmmo", metal, 4, 3);
@@ -1090,19 +1378,21 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
         SetEntProp(ent, Prop_Send, "m_iObjectType", 3);
         SetEntProp(ent, Prop_Data, "m_iSubType", 3);
     }
-    
+
+    KvRewind(hConfig);
     if (KvJumpToKey(hConfig, "attributes"))
     {
         KvGotoFirstSubKey(hConfig);
-        do {
+        do
+        {
             new String:Att[64], String:szPlugin[64], String:Value[PLATFORM_MAX_PATH + 64];
             KvGetSectionName(hConfig, Att, sizeof(Att));
             KvGetString(hConfig, "plugin", szPlugin, sizeof(szPlugin));
             KvGetString(hConfig, "value", Value, sizeof(Value));
-            
+
             if (!StrEqual(szPlugin, "tf2attributes", false) && !StrEqual(szPlugin, "tf2attributes.int", false) && !StrEqual(szPlugin, "tf2items", false))
             {
-                new Action:act = Plugin_Continue;
+                act = Plugin_Continue;
                 Call_StartForward(fOnAddAttribute);
                 Call_PushCell(ent);
                 Call_PushCell(client);
@@ -1118,120 +1408,236 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
                 else TF2Attrib_SetByName(ent, Att, Float:StringToInt(Value));
             }
             
-        } while (KvGotoNextKey(hConfig));
+        }
+        while (KvGotoNextKey(hConfig));
     }
     
-    KvRewind(hConfig);
-    if (KvJumpToKey(hConfig, "viewmodel"))
+#if defined TRYWEARABLES
+    if (!bWearable)
     {
-        new String:ModelName[PLATFORM_MAX_PATH];
-        KvGetString(hConfig, "modelname", ModelName, sizeof(ModelName));
-        if (StrContains(ModelName, "models/", false)) Format(ModelName, sizeof(ModelName), "models/%s", ModelName);
-        if (-1 == StrContains(ModelName, ".mdl", false)) Format(ModelName, sizeof(ModelName), "%s.mdl", ModelName);
-        if (strlen(ModelName) && FileExists(ModelName, true))
+#endif
+        KvRewind(hConfig);
+        if (KvJumpToKey(hConfig, "viewmodel"))
         {
-            PrecacheModel(ModelName, true);
-            new vm = EquipWearable(client, ModelName, true, ent, true);
-            if (vm > -1) ViewmodelOfWeapon[vm] = ent;
-            new String:arms[PLATFORM_MAX_PATH];
-            switch (class)
+            decl String:ModelName[PLATFORM_MAX_PATH];
+            KvGetString(hConfig, "modelname", ModelName, sizeof(ModelName));
+            if (StrContains(ModelName, "models/", false)) Format(ModelName, sizeof(ModelName), "models/%s", ModelName);
+            if (-1 == StrContains(ModelName, ".mdl", false)) Format(ModelName, sizeof(ModelName), "%s.mdl", ModelName);
+            if (strlen(ModelName) && FileExists(ModelName, true))
             {
-                case TFClass_Scout: Format(arms, sizeof(arms), "models/weapons/c_models/c_scout_arms.mdl");
-                case TFClass_Soldier: Format(arms, sizeof(arms), "models/weapons/c_models/c_soldier_arms.mdl");
-                case TFClass_Pyro: Format(arms, sizeof(arms), "models/weapons/c_models/c_pyro_arms.mdl");
-                case TFClass_DemoMan: Format(arms, sizeof(arms), "models/weapons/c_models/c_demo_arms.mdl");
-                case TFClass_Heavy: Format(arms, sizeof(arms), "models/weapons/c_models/c_heavy_arms.mdl");
-                case TFClass_Engineer: Format(arms, sizeof(arms), "models/weapons/c_models/c_engineer_arms.mdl");
-                case TFClass_Medic: Format(arms, sizeof(arms), "models/weapons/c_models/c_medic_arms.mdl");
-                case TFClass_Sniper: Format(arms, sizeof(arms), "models/weapons/c_models/c_sniper_arms.mdl");
-                case TFClass_Spy: Format(arms, sizeof(arms), "models/weapons/c_models/c_spy_arms.mdl");
-            }
-            if (strlen(arms) && FileExists(arms, true))
-            {
-                PrecacheModel(arms, true);
-                new armsVm = EquipWearable(client, arms, true, ent, true);
-                if (armsVm > -1) ViewmodelOfWeapon[armsVm] = ent;
-            }
-            HasCustomViewmodel[ent] = true;
-            new attachment = KvGetNum(hConfig, "attachment", -1);
-            if (attachment > -1)
-            {
-                SetEntProp(vm, Prop_Send, "m_fEffects", 0);
-                SetEntProp(vm, Prop_Send, "m_iParentAttachment", attachment);
-                new Float:offs[3], Float:angOffs[3], Float:flScale;
-                KvGetVector(hConfig, "pos", offs);
-                KvGetVector(hConfig, "ang", angOffs);
-                flScale = KvGetFloat(hConfig, "scale", 1.0);
-                SetEntPropVector(vm, Prop_Send, "m_vecOrigin", offs);
-                SetEntPropVector(vm, Prop_Send, "m_angRotation", angOffs);
-                if (flScale != 1.0) SetEntPropFloat(vm, Prop_Send, "m_flModelScale", flScale);
+                //PrecacheModel(ModelName, true);
+                new vm = EquipWearable(client, ModelName, true, ent, true);
+                if (vm > -1) ViewmodelOfWeapon[vm] = ent;
+                
+                new String:arms[PLATFORM_MAX_PATH];
+                switch (class)
+                {
+                    case TFClass_Scout: Format(arms, sizeof(arms), "models/weapons/c_models/c_scout_arms.mdl");
+                    case TFClass_Soldier: Format(arms, sizeof(arms), "models/weapons/c_models/c_soldier_arms.mdl");
+                    case TFClass_Pyro: Format(arms, sizeof(arms), "models/weapons/c_models/c_pyro_arms.mdl");
+                    case TFClass_DemoMan: Format(arms, sizeof(arms), "models/weapons/c_models/c_demo_arms.mdl");
+                    case TFClass_Heavy: Format(arms, sizeof(arms), "models/weapons/c_models/c_heavy_arms.mdl");
+                    case TFClass_Engineer: Format(arms, sizeof(arms), "models/weapons/c_models/c_engineer_arms.mdl");
+                    case TFClass_Medic: Format(arms, sizeof(arms), "models/weapons/c_models/c_medic_arms.mdl");
+                    case TFClass_Sniper: Format(arms, sizeof(arms), "models/weapons/c_models/c_sniper_arms.mdl");
+                    case TFClass_Spy: Format(arms, sizeof(arms), "models/weapons/c_models/c_spy_arms.mdl");
+                }
+                if (strlen(arms) && FileExists(arms, true))
+                {
+                    PrecacheModel(arms, true);
+                    new armsVm = EquipWearable(client, arms, true, ent, true);
+                    if (armsVm > -1) ViewmodelOfWeapon[armsVm] = ent;
+                }
+                HasCustomViewmodel[ent] = true;
+                new attachment = KvGetNum(hConfig, "attachment", -1);
+                if (attachment > -1)
+                {
+                    SetEntProp(vm, Prop_Send, "m_fEffects", 0);
+                    SetEntProp(vm, Prop_Send, "m_iParentAttachment", attachment);
+                    new Float:offs[3], Float:angOffs[3], Float:flScale;
+                    KvGetVector(hConfig, "pos", offs);
+                    KvGetVector(hConfig, "ang", angOffs);
+                    flScale = KvGetFloat(hConfig, "scale", 1.0);
+                    SetEntPropVector(vm, Prop_Send, "m_vecOrigin", offs);
+                    SetEntPropVector(vm, Prop_Send, "m_angRotation", angOffs);
+                    if (flScale != 1.0) SetEntPropFloat(vm, Prop_Send, "m_flModelScale", flScale);
+                }
             }
         }
-    }
-    
-    KvRewind(hConfig);
-    if (KvJumpToKey(hConfig, "worldmodel"))
-    {
-        new String:ModelName[PLATFORM_MAX_PATH];
-        KvGetString(hConfig, "modelname", ModelName, sizeof(ModelName));
-        if (StrContains(ModelName, "models/", false)) Format(ModelName, sizeof(ModelName), "models/%s", ModelName);
-        if (-1 == StrContains(ModelName, ".mdl", false)) Format(ModelName, sizeof(ModelName), "%s.mdl", ModelName);
-        if (strlen(ModelName) && FileExists(ModelName, true))
+        
+        KvRewind(hConfig);
+        if (KvJumpToKey(hConfig, "worldmodel"))
         {
-            PrecacheModel(ModelName, true);
-            new wr = EquipWearable(client, ModelName, false, ent, true);
-            if (wr > -1) WorldmodelOfWeapon[wr] = ent;
-            HasCustomWorldmodel[ent] = true;
+            decl String:ModelName[PLATFORM_MAX_PATH];
+            KvGetString(hConfig, "modelname", ModelName, sizeof(ModelName));
+            if (StrContains(ModelName, "models/", false)) Format(ModelName, sizeof(ModelName), "models/%s", ModelName);
+            if (-1 == StrContains(ModelName, ".mdl", false)) Format(ModelName, sizeof(ModelName), "%s.mdl", ModelName);
+            if (strlen(ModelName) && FileExists(ModelName, true))
+            {
+                //PrecacheModel(ModelName, true);
+#if defined TRYWEARABLES
+                new wr = EquipWearable(client, ModelName, false, ent, !bWearable);
+#else
+                new wr = EquipWearable(client, ModelName, false, ent, true);
+#endif
+                if (wr > -1) WorldmodelOfWeapon[wr] = ent;
+                HasCustomWorldmodel[ent] = true;
+
+                /*decl String:szParticle[PLATFORM_MAX_PATH];
+                KvGetString(hConfig, "particle", szParticle, sizeof(szParticle));
+                decl String:szAttachment[PLATFORM_MAX_PATH];
+                KvGetString(hConfig, "controlpoint", szAttachment, sizeof(szAttachment));
+                if (szParticle[0] != '\0')
+                {
+                    AttachParticle(wr, szParticle, _, _, true, _, szAttachment);
+                }*/
+
+                new attachment = KvGetNum(hConfig, "attachment", -1);
+                if (attachment > -1)
+                {
+                    SetEntProp(wr, Prop_Send, "m_fEffects", 0);
+                    SetEntProp(wr, Prop_Send, "m_iParentAttachment", attachment);
+                    new Float:offs[3], Float:angOffs[3], Float:scale;
+                    KvGetVector(hConfig, "pos", offs);
+                    KvGetVector(hConfig, "ang", angOffs);
+                    scale = KvGetFloat(hConfig, "scale", 1.0);
+                    SetEntPropVector(wr, Prop_Send, "m_vecOrigin", offs);
+                    SetEntPropVector(wr, Prop_Send, "m_angRotation", angOffs);
+                    if (scale != 1.0) SetEntPropFloat(wr, Prop_Send, "m_flModelScale", scale);
+                }
+                new replace = KvGetNum(hConfig, "replace", 1);
+                if (replace == 1)
+                {
+                    SetEntityRenderMode(ent, RENDER_TRANSCOLOR);
+                    SetEntityRenderColor(ent, 0, 0, 0, 0);
+                }
+                else if (replace == 2)
+                {
+                    SetEntPropFloat(ent, Prop_Send, "m_flModelScale", 0.0);
+                }
+            }
+        }
+#if defined TRYWEARABLES
+    }
+#endif
+
+#if defined TRYWEARABLES
+    KvRewind(hConfig);
+    if (KvJumpToKey(hConfig, "backpack"))
+    {
+        decl String:szModelName[PLATFORM_MAX_PATH];
+        KvGetString(hConfig, "modelname", szModelName, sizeof(szModelName));
+        if (szModelName[0] != '\0' && FileExists(szModelName, true))
+        {
+            //PrecacheModel(szModelName, true); // Why are we precaching things twice...
+            new iExtraWearable = EquipWearable(client, szModelName, false, 0, false);
+            if (iExtraWearable != -1)
+            {
+                g_iWeaponOfExtraWearable[iExtraWearable] = ent;
+
+                new effects = GetEntProp(iExtraWearable, Prop_Send, "m_fEffects");
+                SetEntProp(iExtraWearable, Prop_Send, "m_fEffects", effects & ~EF_NODRAW); // Ensures that it'll be visible
+            }
+
+            g_bHasExtraWearable[ent] = true;
+
             new attachment = KvGetNum(hConfig, "attachment", -1);
             if (attachment > -1)
             {
-                SetEntProp(wr, Prop_Send, "m_fEffects", 0);
-                SetEntProp(wr, Prop_Send, "m_iParentAttachment", attachment);
+                SetEntProp(iExtraWearable, Prop_Send, "m_fEffects", 0);
+                SetEntProp(iExtraWearable, Prop_Send, "m_iParentAttachment", attachment);
                 new Float:offs[3], Float:angOffs[3], Float:scale;
                 KvGetVector(hConfig, "pos", offs);
                 KvGetVector(hConfig, "ang", angOffs);
                 scale = KvGetFloat(hConfig, "scale", 1.0);
-                SetEntPropVector(wr, Prop_Send, "m_vecOrigin", offs);
-                SetEntPropVector(wr, Prop_Send, "m_angRotation", angOffs);
-                if (scale != 1.0) SetEntPropFloat(wr, Prop_Send, "m_flModelScale", scale);
+                SetEntPropVector(iExtraWearable, Prop_Send, "m_vecOrigin", offs);
+                SetEntPropVector(iExtraWearable, Prop_Send, "m_angRotation", angOffs);
+                if (scale != 1.0) SetEntPropFloat(iExtraWearable, Prop_Send, "m_flModelScale", scale);
             }
-            new replace = KvGetNum(hConfig, "replace", 1);
-            if (replace == 1)
+
+            new m_hExtraWearable = GetEntPropEnt(ent, Prop_Send, "m_hExtraWearable");
+            if (IsValidEnt(m_hExtraWearable))
             {
-                SetEntityRenderMode(ent, RENDER_TRANSCOLOR);
-                SetEntityRenderColor(ent, 0, 0, 0, 0);
-            }
-            else if (replace == 2)
-            {
-                SetEntPropFloat(ent, Prop_Send, "m_flModelScale", 0.0);
+                new replace = KvGetNum(hConfig, "replace", 1);
+                if (replace == 1)
+                {
+                    SetEntityRenderMode(m_hExtraWearable, RENDER_TRANSCOLOR);
+                    SetEntityRenderColor(m_hExtraWearable, 0, 0, 0, 0);
+                }
+                else if (replace == 2)
+                {
+                    SetEntPropFloat(m_hExtraWearable, Prop_Send, "m_flModelScale", 0.0);
+                }
+                else if (replace == 3)
+                {
+                    SetEntPropEnt(ent, Prop_Send, "m_hExtraWearable", iExtraWearable);
+                    TF2_RemoveWearable(client, m_hExtraWearable);
+                }
             }
         }
     }
+#endif
     
     KvRewind(hConfig);
     if(KvJumpToKey(hConfig, "sound"))
+    {
         HasCustomSounds[ent] = true;
+
+        KvGotoFirstSubKey(hConfig);
+        do
+        {
+            decl String:section[64];
+            KvGetSectionName(hConfig, section, sizeof(section));
+            if(StrEqual(section, "player", false))
+            {
+                //decl String:replace[PLATFORM_MAX_PATH];
+                //KvGetString(hConfig, "replace", replace, sizeof(replace));
+
+                //KvGetString(hConfig, "playover", replace, sizeof(replace));
+
+                KvGetString(hConfig, "onfire", g_szSoundOnFire[client][class][slot], sizeof(g_szSoundOnFire[][][]));
+
+                KvGetString(hConfig, "onspinup", g_szSoundOnSpinUp[client], sizeof(g_szSoundOnSpinUp[]));
+
+                KvGetString(hConfig, "onspindown", g_szSoundOnSpinDown[client], sizeof(g_szSoundOnSpinUp[]));
+
+                KvGetString(hConfig, "onheavyfire", g_szSoundOnHeavyFire[client], sizeof(g_szSoundOnSpinUp[]));
+
+                KvGetString(hConfig, "onrev", g_szSoundOnRev[client], sizeof(g_szSoundOnSpinUp[]));
+            }
+        } while(KvGotoNextKey(hConfig));
+    }
     
     IsCustom[ent] = true;
     
-    strcopy(LogName[ent], 64, logName);
-    //strcopy(KillIcon[ent], 64, killIcon);
+    //strcopy(LogName[ent], sizeof(LogName[]), logName);
+   // strcopy(KillIcon[ent], sizeof(KillIcon[]), killIcon);
     
     CustomConfig[ent] = hConfig;
     
-    if (makeActive && !StrEqual(baseClass, "tf_weapon_invis", false))
+#if defined TRYWEARABLES
+    if (!bWearable)
     {
-        ClientCommand(client, "slot%i", slot+1);
-        OnWeaponSwitch(client, ent);
+#endif
+        if (makeActive && !StrEqual(baseClass, "tf_weapon_invis", false))
+        {
+            ClientCommand(client, "slot%i", slot+1);
+            OnWeaponSwitch(client, ent);
+        }
+        else
+        {
+            OnWeaponSwitch(client, GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon"));
+        }
+#if defined TRYWEARABLES
     }
-    else OnWeaponSwitch(client, GetEntPropEnt(client, Prop_Send, "m_hActiveWeapon"));
+#endif
     
     if (GetConVarBool(cvarSetHealth))
     {
         CreateTimer(0.1, Timer_SetHealth, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
     }
     
-    new Action:act = Plugin_Continue;
+    act = Plugin_Continue;
     Call_StartForward(fOnWeaponGive);
     Call_PushCell(ent);
     Call_PushCell(client);
@@ -1282,6 +1688,132 @@ public Action:SoundHook(clients[64], &numClients, String:sound[PLATFORM_MAX_PATH
     return Plugin_Continue;
 }
 
+public Action:TF2_CalcIsAttackCritical(iClient, iWeapon, String:szWeapon[], &bool:bCrit)
+{
+    new iSlot = GetSlotFromPlayerWeapon(iClient, iWeapon);
+    if (iSlot != -1)
+    {
+        new iClass = _:TF2_GetPlayerClass(iClient);
+        if (g_szSoundOnFire[iClient][iClass][iSlot][0] != '\0')
+        {
+            EmitSoundToAll(g_szSoundOnFire[iClient][iClass][iSlot], iClient);
+        }
+    }
+}
+
+public Action:OnPlayerRunCmd(iClient, &iButtons, &iImpulse, Float:fVel[3], Float:fAng[3], &iWeapon) 
+{
+    if (IsValidClient(iClient) && TF2_GetPlayerClass(iClient) == TFClass_Heavy) 
+    {   
+        new weapon = GetPlayerWeaponSlot(iClient, TFWeaponSlot_Primary);
+        if( weapon != -1 && IsCustom[weapon] && weapon == GetEntPropEnt(iClient, Prop_Send, "m_hActiveWeapon") )
+        {
+            new iWeaponState = TryGetEntProp(weapon, Prop_Send, "m_iWeaponState");
+            if (iWeaponState == WeaponState_WindUp && !g_bMinigunLock1[iClient])
+            {
+                if (g_szSoundOnSpinUp[iClient][0] != '\0')
+                {
+                    EmitSoundToAll(g_szSoundOnSpinUp[iClient], iClient);
+                }
+                
+            //  PrintToChatAll("WeaponState = Windup");
+                
+                g_bMinigunLock1[iClient] = true;
+                g_bMinigunLock2[iClient] = false;
+                g_bMinigunLock3[iClient] = false;
+                g_bCanWindDown[iClient] = true;
+
+                if (g_szSoundOnRev[iClient][0] != '\0')
+                {
+                    StopSound(iClient, SNDCHAN_AUTO, g_szSoundOnRev[iClient]);
+                }
+
+                if (g_szSoundOnHeavyFire[iClient][0] != '\0')
+                {
+                    StopSound(iClient, SNDCHAN_AUTO, g_szSoundOnHeavyFire[iClient]);
+                }
+            }
+            else if (iWeaponState == WeaponState_Firing && !g_bMinigunLock2[iClient])
+            {
+                if (g_szSoundOnHeavyFire[iClient][0] != '\0')
+                {
+                    EmitSoundToAll(g_szSoundOnHeavyFire[iClient], iClient);
+                }
+            //  PrintToChatAll("WeaponState = Firing");
+                
+                g_bMinigunLock2[iClient] = true;
+                g_bMinigunLock1[iClient] = true;
+                g_bMinigunLock3[iClient] = false;
+                g_bCanWindDown[iClient] = true;
+
+                if (g_szSoundOnRev[iClient][0] != '\0')
+                {
+                    StopSound(iClient, SNDCHAN_AUTO, g_szSoundOnRev[iClient]);
+                }
+
+                if (g_szSoundOnSpinUp[iClient][0] != '\0' && g_szSoundOnHeavyFire[iClient][0] != '\0')
+                {
+                    StopSound(iClient, SNDCHAN_AUTO, g_szSoundOnSpinUp[iClient]);
+                }
+            }
+            else if (iWeaponState == WeaponState_Revved && !g_bMinigunLock3[iClient])
+            {
+                if (g_szSoundOnRev[iClient][0] != '\0')
+                {
+                    EmitSoundToAll(g_szSoundOnRev[iClient], iClient);
+                }
+            //  PrintToChatAll("WeaponState = Spun Up");
+                
+                g_bMinigunLock3[iClient] = true;
+                g_bMinigunLock1[iClient] = true;
+                g_bMinigunLock2[iClient] = false;
+                g_bCanWindDown[iClient] = true;
+
+                if (g_szSoundOnHeavyFire[iClient][0] != '\0')
+                {
+                    StopSound(iClient, SNDCHAN_AUTO, g_szSoundOnHeavyFire[iClient]);
+                }
+
+                if (g_szSoundOnSpinUp[iClient][0] != '\0' && g_szSoundOnRev[iClient][0] != '\0')
+                {
+                    StopSound(iClient, SNDCHAN_AUTO, g_szSoundOnSpinUp[iClient]);
+                }
+            }
+            else if (iWeaponState == WeaponState_Idle)
+            {
+                if (g_bCanWindDown[iClient])
+                {
+            //      PrintToChatAll("WeaponState = WindDown");
+                    if (g_szSoundOnSpinDown[iClient][0] != '\0')
+                    {
+                        EmitSoundToAll(g_szSoundOnSpinDown[iClient], iClient);
+                    }
+
+                    if (g_szSoundOnSpinUp[iClient][0] != '\0')
+                    {
+                        StopSound(iClient, SNDCHAN_AUTO, g_szSoundOnSpinUp[iClient]);
+                    }
+                    g_bCanWindDown[iClient] = false;
+                }
+                
+                if (g_szSoundOnRev[iClient][0] != '\0')
+                {
+                    StopSound(iClient, SNDCHAN_AUTO, g_szSoundOnRev[iClient]);
+                }
+
+                if (g_szSoundOnHeavyFire[iClient][0] != '\0')
+                {
+                    StopSound(iClient, SNDCHAN_AUTO, g_szSoundOnHeavyFire[iClient]);
+                }
+
+                g_bMinigunLock1[iClient] = false;
+                g_bMinigunLock2[iClient] = false;
+                g_bMinigunLock3[iClient] = false;
+            }
+        }
+    }
+}
+
 public OnWeaponSwitch(client, Wep)
 {
     if (!IsValidEntity(Wep)) return;
@@ -1304,7 +1836,7 @@ public OnEntityDestroyed(ent)
 {
     if (ent <= 0 || ent > 2048) return;
     IsCustom[ent] = false;
-    LogName[ent][0] = '\0';
+    //LogName[ent][0] = '\0';
     //KillIcon[ent][0] = '\0';
     CustomConfig[ent] = INVALID_HANDLE;
     HasCustomViewmodel[ent] = false;
@@ -1312,6 +1844,10 @@ public OnEntityDestroyed(ent)
     HasCustomSounds[ent] = false;
     HasCustomWorldmodel[ent] = false;
     WorldmodelOfWeapon[ent] = 0;
+#if defined TRYWEARABLES
+    g_iWeaponOfExtraWearable[ent] = -1;
+    g_bHasExtraWearable[ent] = false;
+#endif
     
     // TODO: Delete this once the wearables plugin is released!
     if (ent <= 0 || ent > 2048) return;
@@ -1343,10 +1879,15 @@ public Action:Event_Resupply(Handle:event, const String:name[], bool:dontBroadca
     new client = GetClientOfUserId(uid);
     if (!client) return;
     if (!GetConVarBool(cvarEnabled)) return;
+    StopMiniGunSounds(client);
+#if defined TRYWEARABLES
+    for (new i = 0; i < 5; i++)
+    {
+        g_iEntRefOfCustomWearable[client][i] = -1;
+    }
+#endif
     hEquipTimer[client] = CreateTimer(0.0, Timer_CheckEquip, uid, TIMER_FLAG_NO_MAPCHANGE);
     hBotEquipTimer[client] = CreateTimer(GetRandomFloat(0.0, 1.5), Timer_CheckBotEquip, uid, TIMER_FLAG_NO_MAPCHANGE);
-    
-    CreateTimer(0.01, Timer_ReplaceWeapons, client);
 }
 
 public Action:Event_Hurt(Handle:event, const String:name[], bool:dontBroadcast)
@@ -1398,17 +1939,22 @@ public Action:OnTakeDamage(iVictim, &iAtker, &iInflictor, &Float:flDamage, &iDmg
 // Displays a menu describing what weapon the victim was killed by
 DisplayDeathMenu(iKiller, iVictim, TFClassType:iAtkClass, iAtkSlot)
 {
-    if (iAtkSlot == -1 || iAtkClass == TFClass_Unknown || iKiller == iVictim || !IsValidClient(iKiller)) // In event_death, iVictim will surely be valid at this point
+    if (iAtkSlot == -1 || iAtkClass == TFClass_Unknown || iKiller == iVictim || !IsValidClient(iKiller) || WeaponName[iKiller][iAtkClass][iAtkSlot][0] == '\0') // In event_death, iVictim will surely be valid at this point
     {
         return;
     }
 
-    new Handle:hMenu = CreateMenu(MenuHandler_Null);
-    SetMenuTitle(hMenu, "%s\n \n%s", WeaponName[iKiller], WeaponDescription[iKiller]);
-    AddMenuItem(hMenu, "exit", "Close");
-    SetMenuPagination(hMenu, MENU_NO_PAGINATION);
-    SetMenuExitButton(hMenu, false);
-    DisplayMenu(hMenu, iVictim, 4); // 4 second lasting menu
+    new Handle:panel = CreatePanel();
+    decl String:s[512];
+
+    Format(s, sizeof(s), "You were killed by: %s", WeaponName[iKiller][iAtkClass][iAtkSlot]);
+    DrawPanelItem(panel, s);
+
+    Format(s, sizeof(s), "%s", WeaponDescription[iKiller][iAtkClass][iAtkSlot]);
+    DrawPanelText(panel, s);
+
+    SendPanelToClient(panel, iVictim, MenuHandler_Null, 10); // Give them a 10 second menu
+    CloseHandle(panel);
 }
 
 public Action:Event_Death(Handle:event, const String:name[], bool:dontBroadcast)
@@ -1433,11 +1979,25 @@ public Action:Event_Death(Handle:event, const String:name[], bool:dontBroadcast)
         // SetEventString(event, "weapon", szKill_Icon); // Not a recommended method, as things like sniper rifles can have multiple kill icons
     }
 
-    g_iTheWeaponSlotIWasLastHitBy[client] = -1;
+    if (GetEventInt(event, "death_flags") & TF_DEATHFLAG_DEADRINGER)
+    {
+        g_iTheWeaponSlotIWasLastHitBy[client] = -1;
+        return Plugin_Continue;
+    }
 
-    if (GetEventInt(event, "death_flags") & TF_DEATHFLAG_DEADRINGER) return Plugin_Continue;
+    StopMiniGunSounds(client);
+
+    if (iKiller)
+    {
+        DisplayDeathMenu(iKiller, client, TF2_GetPlayerClass(iKiller), g_iTheWeaponSlotIWasLastHitBy[client]);
+    }
+
+    g_iTheWeaponSlotIWasLastHitBy[client] = -1;
     
-    if (!GetConVarBool(cvarKillWearablesOnDeath)) return Plugin_Continue;
+    if (!GetConVarBool(cvarKillWearablesOnDeath))
+    {
+        return Plugin_Continue;
+    }
 
     new i = -1;
     while ((i = FindEntityByClassname(i, "tf_wearable*")) != -1)
@@ -1447,8 +2007,6 @@ public Action:Event_Death(Handle:event, const String:name[], bool:dontBroadcast)
         if (GetEntProp(i, Prop_Send, "m_bDisguiseWearable")) continue;
         TF2_RemoveWearable(client, i);
     }
-
-    DisplayDeathMenu(iKiller, client, TF2_GetPlayerClass(iKiller), g_iTheWeaponSlotIWasLastHitBy[client]);
 
     return Plugin_Continue;
 }
@@ -2265,3 +2823,11 @@ stock bool:StrStarts(const String:szStr[], const String:szSubStr[], bool:bCaseSe
     return !StrContains(szStr, szSubStr, bCaseSensitive);
 }
 
+stock TryGetEntProp(iEnt, PropType:pType, const String:szProp[], iSize = 4, iElement = 0)
+{
+    if (!IsValidEntity(iEnt) || GetEntSendPropOffs(iEnt, szProp) <= 0)
+    {
+        return -1;
+    }
+    return GetEntProp(iEnt, Prop_Send, szProp, iSize, iElement);
+}
