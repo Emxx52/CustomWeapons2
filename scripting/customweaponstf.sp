@@ -414,8 +414,26 @@ public OnMapStart()
 				if(StrEqual(section, "player", false))
 				{
 					new String:replace[PLATFORM_MAX_PATH];
-					KvGetString(hFile, "replace", replace, sizeof(replace));
-					SuperPrecacheSound(replace);
+                    KvGetString(hFile, "replace", replace, sizeof(replace));
+                    SuperPrecacheSound(replace);
+
+                    KvGetString(hFile, "playover", replace, sizeof(replace));
+                    SuperPrecacheSound(replace);
+
+                    KvGetString(hFile, "onfire", replace, sizeof(replace));
+                    SuperPrecacheSound(replace);
+
+                    KvGetString(hFile, "onspinup", replace, sizeof(replace));
+                    SuperPrecacheSound(replace);
+
+                    KvGetString(hFile, "onspindown", replace, sizeof(replace));
+                    SuperPrecacheSound(replace);
+
+                    KvGetString(hFile, "onheavyfire", replace, sizeof(replace));
+                    SuperPrecacheSound(replace);
+
+                    KvGetString(hFile, "onrev", replace, sizeof(replace));
+                    SuperPrecacheSound(replace);
 				}
 			} while(KvGotoNextKey(hFile));
 		}
@@ -578,7 +596,16 @@ public OnPluginEnd()
 			Format(FileName, sizeof(FileName), "customweaponstf/%s", FileName);
 			ServerCommand("sm plugins unload %s", FileName);
 		}
-		CloseHandle(hDir); }
+		CloseHandle(hDir);
+	}
+
+	for (new i = 1; i <= MaxClients; i++)
+    {
+        if (IsClientInGame(i))
+        {
+            StopMiniGunSounds(i);
+        }
+    }
 }
 
 public Action:Command_Custom(client, args)
@@ -604,118 +631,116 @@ public Action:Command_Custom(client, args)
 	return Plugin_Handled;
 }
 
-stock CustomMainMenu(client)
+CustomMainMenu(client)
 {
-	if (!GetConVarBool(cvarMenu)) return;
-	new Handle:menu = CreateMenu(CustomMainHandler);
-	new counts[5], bool:first = true;
-	new _:class;
-	if (IsPlayerAlive(client)) class = _:TF2_GetPlayerClass(client);
-	else class = GetEntProp(client, Prop_Send, "m_iDesiredPlayerClass");
-	
-	SetMenuTitle(menu, "Custom Weapons 2 Beta");
-	for (new i = 0; i < 5; i++)
-	{
-		counts[i] = GetArraySize(aItems[class][i]);
-		if (counts[i] && first)
-		{
-			// FIX START
-			/*switch (i)
-			{
-				case 0: SetMenuTitle(menu, "Custom Weapons 2 Beta\n- Primary -");
-				case 1: SetMenuTitle(menu, "Custom Weapons 2 Beta\n- Secondary -");
-				case 2: SetMenuTitle(menu, "Custom Weapons 2 Beta\n- Melee -");
-				case 3: SetMenuTitle(menu, "Custom Weapons 2 Beta\n- PDA -");
-				case 4: SetMenuTitle(menu, "Custom Weapons 2 Beta\n- PDA 2 -");
-			}*/
-			// FIX END
-			first = false;
-		}
-	}
-	
-	for (new slot = 0; slot <= 4; slot++)
-	{
-		if (!counts[slot]) continue;
-		new saved = SavedWeapons[client][class][slot];
-		for (new i = 0; i < counts[slot]; i++)
-		{
-			new Handle:hWeapon = GetArrayCell(aItems[class][slot], i), String:Name[64], String:Index[10], String:flags[64], bool:canUseWeapon = false;
-			
-			KvRewind(hWeapon);
-			KvGetString(hWeapon, "flags", flags, sizeof(flags));
-			
-			if(StrEqual(flags, ""))
-			{
-				KvRewind(hWeapon);
-				KvGetString(hWeapon, "flag", flags, sizeof(flags));
-			}
-			
-			KvRewind(hWeapon);
-			if(KvJumpToKey(hWeapon, "flags") || KvJumpToKey(hWeapon, "flag"))
-			{
-				new AdminId:adminID = GetUserAdmin(client);
-				if(adminID != INVALID_ADMIN_ID)
-				{
-					new AdminFlag:adminFlags[AdminFlags_TOTAL];
-					new flagBits = ReadFlagString(flags);
-					FlagBitsToArray(flagBits, adminFlags, AdminFlags_TOTAL);
-					
-					for(new j = 0; j < AdminFlags_TOTAL; j++)
-					{
-						if(GetAdminFlag(adminID, adminFlags[j]) && !canUseWeapon)
-						{
-							canUseWeapon = true;
-						}
-					}
-				} else
-				{
-					canUseWeapon = false;
-				}
-			} else
-			{
-				canUseWeapon = true;
-			}
-			
-			if(!canUseWeapon)
-			{
-				continue;
-			}
-			
-			KvRewind(hWeapon);
-			KvGetSectionName(hWeapon, Name, sizeof(Name));
-			if (saved == i) Format(Name, sizeof(Name), "%s ✓", Name);
-			Format(Index, sizeof(Index), "%i %i", slot, i);
-			if (i == counts[slot]-1 && slot < 4)
-			{
-				new nextslot;
-				for (new j = slot+1; j <= 4; j++)
-				{
-					if (counts[j])
-					{
-						nextslot = j;
-						break;
-					}
-				}
-				switch (nextslot)
-				{
-					case 1: Format(Name, sizeof(Name), "%s\n- Secondary -", Name);
-					case 2: Format(Name, sizeof(Name), "%s\n- Melee -", Name);
-					case 3: Format(Name, sizeof(Name), "%s\n- PDA -", Name);
-					case 4: Format(Name, sizeof(Name), "%s\n- PDA 2 -", Name);
-				}
-			}
-			AddMenuItem(menu, Index, Name);
-		}
-	}
-	
-	if (!GetMenuItemCount(menu))
-		PrintToChat(client, "\x01\x07FFA07AThis server doesn't have any custom weapons for your class yet. Sorry!");
-	
-	BrowsingClass[client] = TFClassType:class;
-	
-	SetMenuExitButton(menu, true);
-	DisplayMenuAtItem(menu, client, 0, MENU_TIME_FOREVER);
+    if (!GetConVarBool(cvarMenu)) return;
+    new Handle:menu = CreateMenu(CustomMainHandler);
+    new counts[5]; //, bool:first = true;
+    new _:class;
+    if (IsPlayerAlive(client)) class = _:TF2_GetPlayerClass(client);
+    else class = GetEntProp(client, Prop_Send, "m_iDesiredPlayerClass");
+
+    SetMenuTitle(menu, "Custom Weapons 2 Data");
+
+    for (new iWeaponSlot = 0; iWeaponSlot < 5; iWeaponSlot++)
+    {
+        counts[iWeaponSlot] = GetArraySize(aItems[class][iWeaponSlot]);
+        if (counts[iWeaponSlot]) // If there are weapons for this slot, add a menu select for them.
+        {
+            switch (iWeaponSlot)
+            {
+                case 0: AddMenuItem(menu, "0", "- Primary -");   // First string is the weapon slot it applies to, second string is what's displayed in the menu.
+                case 1: AddMenuItem(menu, "1", "- Secondary -"); // This is necessary because it's possible to have custom primaries, but no custom secondaries.
+                case 2: AddMenuItem(menu, "2", "- Melee -");
+                case 3:
+                {
+                    switch (class)
+                    {
+                        case TFClass_Engineer:  AddMenuItem(menu, "3", "- Build PDA -");
+                        case TFClass_Spy:       AddMenuItem(menu, "3", "- Disguise Kit -");
+                    }
+                }
+                case 4:
+                {
+                    switch (class)
+                    {
+                        case TFClass_Engineer:  AddMenuItem(menu, "4", "- Destroy PDA -");
+                        case TFClass_Spy:       AddMenuItem(menu, "4", "- Cloak -");
+                    }
+                }
+            }
+        }
+    }
+
+    /*
+    //SetMenuTitle(menu, "Custom Weapons 2 Data"); // This line is entirely pointless and gets overwritten by the SetMenuTitle below
+    for (new i = 0; i < 5; i++)
+    {
+        counts[i] = GetArraySize(aItems[class][i]);
+        if (counts[i]) // && first)
+        {
+            switch (i)
+            {
+                case 0: SetMenuTitle(menu, "Custom Weapons 2 Data\n- Primary -");
+                case 1: SetMenuTitle(menu, "Custom Weapons 2 Data\n- Secondary -");
+                case 2: SetMenuTitle(menu, "Custom Weapons 2 Data\n- Melee -");
+                case 3: SetMenuTitle(menu, "Custom Weapons 2 Data\n- PDA -");
+                case 4: SetMenuTitle(menu, "Custom Weapons 2 Data\n- PDA 2 -");
+            }
+            break; // We only need to set the title once
+            //first = false;
+        }
+    }
+    
+    for (new slot = 0; slot < 5; slot++)
+    {
+        if (!counts[slot])
+        {
+            continue; // If there's no weapons for that slot, skip making a menu for it.
+        }
+
+        new saved = SavedWeapons[client][class][slot];
+        for (new i = 0; i < counts[slot]; i++) // Loop through hte number of weapons for this slot
+        {
+            new Handle:hWeapon = GetArrayCell(aItems[class][slot], i), String:Name[64], String:Index[10]; // Get the name of the weapon
+            KvRewind(hWeapon);
+            KvGetSectionName(hWeapon, Name, sizeof(Name));
+            if (saved == i) Format(Name, sizeof(Name), "%s ✓", Name);
+            Format(Index, sizeof(Index), "%i %i", slot, i);
+            if (i == counts[slot]-1 && slot < 4)
+            {
+                new nextslot;
+                for (new j = slot+1; j <= 4; j++)
+                {
+                    if (counts[j])
+                    {
+                        nextslot = j;
+                        break;
+                    }
+                }
+                switch (nextslot)
+                {
+                    case 1: Format(Name, sizeof(Name), "%s\n- Secondary -", Name);
+                    case 2: Format(Name, sizeof(Name), "%s\n- Melee -", Name);
+                    case 3: Format(Name, sizeof(Name), "%s\n- PDA -", Name);
+                    case 4: Format(Name, sizeof(Name), "%s\n- PDA 2 -", Name);
+                }
+            }
+            AddMenuItem(menu, Index, Name);
+        }
+
+    }*/
+    
+    if (!GetMenuItemCount(menu))
+        PrintToChat(client, "\x01\x07FFA07AThis server doesn't have any custom weapons for your class yet. Sorry!");
+    
+    BrowsingClass[client] = TFClassType:class;
+    SetMenuPagination(menu, MENU_NO_PAGINATION);
+    SetMenuExitButton(menu, true);
+    DisplayMenu(menu, client, MENU_TIME_FOREVER);
+    //DisplayMenuAtItem(menu, client, 0, MENU_TIME_FOREVER); // Why set it to the first item when that already happens...?
 }
+
 public CustomMainHandler(Handle:menu, MenuAction:action, client, item)
 {
 	if (action == MenuAction_Select)
