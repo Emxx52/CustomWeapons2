@@ -12,7 +12,7 @@
 #include <tf2attributes>
 //#include <morecolors> // wait on translations
 
-#define PLUGIN_VERSION "beta 6"
+#define PLUGIN_VERSION "beta 7"
 
 public Plugin:myinfo = {
 	name = "Custom Weapons 2",
@@ -21,6 +21,46 @@ public Plugin:myinfo = {
 	version = PLUGIN_VERSION,
 	url = "http://mstr.ca/"
 };
+
+#define TF_MAX_CLASSES			10   	// Scout, Soldier, etc
+#define MAX_WEAPONSLOTS	     	5		// The number of weapon slots we care about. Primary, Secondary, Melee, Build, Destroy - Slots beyond this have no support. (Adding support might be as simple as increasing this define, who knows)
+#define MAX_ENTITIES            2049    // This is something we'd ideally phase out of using.
+
+#define MAX_SOUNDS_PER_WEAPON 	6       // Max number of sound replacements that can be registered at once
+
+enum
+{
+    SFXMethod_Ignore = 0,   // "ignore"             Don't actually use this sound, it's in the config for no damn reason
+    SFXMethod_Replace,      // "find" "replace"     Overwrite the sound, if possible. Generally this might entail simply playing the sound on the same channel which gets rid of the old sound
+    SFXMethod_PlayOver,     // "find" "playover"    Plays during emitsound, on top of that sound
+    SFXMethod_Indexer,
+
+    SFXMethod_OnFire,       // "onfire"             Play the sound at the time of TF2_CalcIsAttackCrit
+    SFXMethod_OnSpinUp,     // "onspinup"           These 4 related to Heavy's minigun. Since only one sound can play per each of these, these are actually unused
+    SFXMethod_OnSpinDown,   // "onspindown"
+    SFXMethod_OnHeavyFire,  // "onheavyfire"
+    SFXMethod_OnRev         // "onrev"
+    
+}
+
+// [iClient][iClass][iSlot]
+//static String:g_szSoundToFind[MAXPLAYERS+1][10][5][MAX_SOUNDS_PER_WEAPON][PLATFORM_MAX_PATH];
+//static String:g_szSoundToPlay[MAXPLAYERS+1][10][5][MAX_SOUNDS_PER_WEAPON][PLATFORM_MAX_PATH];
+//static g_iSoundPlayType[MAXPLAYERS+1][10][5][MAX_SOUNDS_PER_WEAPON][SFXMethod_Indexer];
+
+static String:g_szSoundOnFire[MAXPLAYERS+1][TF_MAX_CLASSES][MAX_WEAPONSLOTS][PLATFORM_MAX_PATH]; // Play only a single sound on fire, not indexed by MAX_SOUNDS_PER_WEAPON
+
+static String:g_szSoundOnSpinUp[MAXPLAYERS+1][PLATFORM_MAX_PATH];
+static String:g_szSoundOnSpinDown[MAXPLAYERS+1][PLATFORM_MAX_PATH];
+static String:g_szSoundOnHeavyFire[MAXPLAYERS+1][PLATFORM_MAX_PATH];
+static String:g_szSoundOnRev[MAXPLAYERS+1][PLATFORM_MAX_PATH];
+
+static bool:g_bMinigunLock1[MAXPLAYERS+1];
+static bool:g_bMinigunLock2[MAXPLAYERS+1];
+static bool:g_bMinigunLock3[MAXPLAYERS+1];
+static bool:g_bCanWindDown[MAXPLAYERS+1];
+
+// See StopMinigunSounds()
 
 #define MAX_STEAMIDS_PER_WEAPON 5    // How many people's steamIDs can be listed on a weapon to give Self-Made quality to
 #define MAX_STEAMAUTH_LENGTH    21
@@ -52,9 +92,100 @@ enum
 	TFQual_Decorated
 }
 
-new Handle:aItems[10][5];
+// TF2 Weapon Loadout Slots
+enum
+{
+    TFWeaponSlot_DisguiseKit = 3,
+    TFWeaponSlot_Construction = 3,
+    TFWeaponSlot_Watch = 4,
+    TFWeaponSlot_Destruction = 4,
+    TFWeaponSlot_PDA = 5,           // What?
+    TFWeaponSlot_Grapple = 5
+}
+
+// m_iWeaponState for Miniguns
+enum
+{
+    WeaponState_Idle = 0, // Applies while winding down
+    WeaponState_WindUp,
+    WeaponState_Firing,
+    WeaponState_Revved
+}
+
+enum (<<= 1)
+{
+    EF_BONEMERGE = (1 << 0),    // Merges bones of names shared with a parent entity to the position and direction of the parent's.
+    EF_BRIGHTLIGHT,             // Emits a dynamic light of RGB(250,250,250) and a random radius of 400 to 431 from the origin.
+    EF_DIMLIGHT,                // Emits a dynamic light of RGB(100,100,100) and a random radius of 200 to 231 from the origin.
+    EF_NOINTERP,                // Don't interpolate on the next frame.
+    EF_NOSHADOW,                // Don't cast a shadow. To do: Does this also apply to shadow maps?
+    EF_NODRAW,                  // Entity is completely ignored by the client. Can cause prediction errors if a player proceeds to collide with it on the server.
+    EF_NORECEIVESHADOW,         // Don't receive dynamic shadows.
+    EF_BONEMERGE_FASTCULL,      // For use with EF_BONEMERGE. If set, the entity will use its parent's origin to calculate whether it is visible; if not set, it will set up parent's bones every frame even if the parent is not in the PVS.
+    EF_ITEM_BLINK,              // Blink an item so that the user notices it. Added for Xbox 1, and really not very subtle.
+    EF_PARENT_ANIMATES          // Assume that the parent entity is always animating. Causes it to realign every frame.
+}
+
+enum (<<= 1) // SolidFlags_t
+{
+    FSOLID_CUSTOMRAYTEST  = (1 << 0),   // Ignore solid type + always call into the entity for ray tests
+    FSOLID_CUSTOMBOXTEST,               // Ignore solid type + always call into the entity for swept box tests
+    FSOLID_NOT_SOLID,                   // Are we currently not solid?
+    FSOLID_TRIGGER,                     // This is something may be collideable but fires touch functions
+                                        // even when it's not collideable (when the FSOLID_NOT_SOLID flag is set)
+    FSOLID_NOT_STANDABLE,               // You can't stand on this
+    FSOLID_VOLUME_CONTENTS,             // Contains volumetric contents (like water)
+    FSOLID_FORCE_WORLD_ALIGNED,         // Forces the collision rep to be world-aligned even if it's SOLID_BSP or SOLID_VPHYSICS
+    FSOLID_USE_TRIGGER_BOUNDS,          // Uses a special trigger bounds separate from the normal OBB
+    FSOLID_ROOT_PARENT_ALIGNED,         // Collisions are defined in root parent's local coordinate space
+    FSOLID_TRIGGER_TOUCH_DEBRIS,        // This trigger will touch debris objects
+
+    FSOLID_MAX_BITS = 10
+};
+
+/*
+    m_collisiongroup
+
+    * Generally I only see the following get used for TF2
+    1  = No collide with anything but the world itself. Prevents map trigger_ entities from firing Touch outputs.
+    2  = No collide with players, certain projectiles, airblast, - But bullets/hitscan still collide
+    5  = Normal
+    10 = No collide with players, certain projectiles, airblast, bullets. Does not prevent map trigger_ outputs.
+*/
+#if !defined _smlib_included
+enum // Collision_Group_t in const.h
+{
+    COLLISION_GROUP_NONE  = 0,
+    COLLISION_GROUP_DEBRIS,         // Collides with nothing but world and static stuff
+    COLLISION_GROUP_DEBRIS_TRIGGER, // Same as debris, but hits triggers
+    COLLISION_GROUP_INTERACTIVE_DEBRIS, // Collides with everything except other interactive debris or debris
+    COLLISION_GROUP_INTERACTIVE,    // Collides with everything except interactive debris or debris
+    COLLISION_GROUP_PLAYER,
+    COLLISION_GROUP_BREAKABLE_GLASS,
+    COLLISION_GROUP_VEHICLE,
+    COLLISION_GROUP_PLAYER_MOVEMENT,  // For HL2, same as Collision_Group_Player, for
+                                        // TF2, this filters out other players and CBaseObjects
+    COLLISION_GROUP_NPC,            // Generic NPC group
+    COLLISION_GROUP_IN_VEHICLE,     // for any entity inside a vehicle
+    COLLISION_GROUP_WEAPON,         // for any weapons that need collision detection
+    COLLISION_GROUP_VEHICLE_CLIP,   // vehicle clip brush to restrict vehicle movement
+    COLLISION_GROUP_PROJECTILE,     // Projectiles!
+    COLLISION_GROUP_DOOR_BLOCKER,   // Blocks entities not permitted to get near moving doors
+    COLLISION_GROUP_PASSABLE_DOOR,  // ** sarysa TF2 note: Must be scripted, not passable on physics prop (Doors that the player shouldn't collide with)
+    COLLISION_GROUP_DISSOLVING,     // Things that are dissolving are in this group
+    COLLISION_GROUP_PUSHAWAY,       // ** sarysa TF2 note: I could swear the collision detection is better for this than NONE. (Nonsolid on client and server, pushaway in player code)
+
+    COLLISION_GROUP_NPC_ACTOR,      // Used so NPCs in scripts ignore the player.
+    COLLISION_GROUP_NPC_SCRIPTED,   // USed for NPCs in scripts that should not collide with each other
+
+    LAST_SHARED_COLLISION_GROUP
+};
+#endif
+
+new Handle:aItems[TF_MAX_CLASSES][MAX_WEAPONSLOTS];
 new Handle:fOnAddAttribute;
 new Handle:fOnWeaponGive;
+new Handle:fBeforeWeaponGive;
 
 new TFClassType:BrowsingClass[MAXPLAYERS + 1];
 new BrowsingSlot[MAXPLAYERS + 1];
@@ -62,28 +193,28 @@ new LookingAtItem[MAXPLAYERS + 1];
 new Handle:hEquipTimer[MAXPLAYERS + 1];
 new Handle:hBotEquipTimer[MAXPLAYERS + 1];
 new bool:InRespawnRoom[MAXPLAYERS + 1];
-new SavedWeapons[MAXPLAYERS + 1][10][5];
-new Handle:hSavedWeapons[MAXPLAYERS + 1][10][5];
+new SavedWeapons[MAXPLAYERS + 1][TF_MAX_CLASSES][MAX_WEAPONSLOTS];
+new Handle:hSavedWeapons[MAXPLAYERS + 1][TF_MAX_CLASSES][MAX_WEAPONSLOTS];
 new bool:OKToEquipInArena[MAXPLAYERS + 1];
 
 static g_iTheWeaponSlotIWasLastHitBy[MAXPLAYERS + 1] = {-1,...};
 static g_bPluginReloaded = false;
 
-new bool:IsCustom[2049];
+new bool:IsCustom[MAX_ENTITIES];
 
-new String:LogName[2049][64]; // Look at this gigantic amount of memory wastage
+//new String:LogName[2049][64]; // Look at this gigantic amount of memory wastage
 //new String:KillIcon[2049][64];
-new String:WeaponName[2049][64];
-new String:WeaponDescription[2049][512];
+new String:WeaponName[MAXPLAYERS + 1][TF_MAX_CLASSES][5][64];
+new String:WeaponDescription[MAXPLAYERS + 1][TF_MAX_CLASSES][5][512];
 
 new Handle:ReplacementWeapons[256]; // I don't think people would make more than 256 weapons... And these aren't by entity id, so we don't need 2049.
 
-new Handle:CustomConfig[2049];
-new bool:HasCustomViewmodel[2049];
-new ViewmodelOfWeapon[2049];
-new bool:HasCustomWorldmodel[2049];
-new WorldmodelOfWeapon[2049];
-new bool:HasCustomSounds[2049];
+new Handle:CustomConfig[MAX_ENTITIES];
+new bool:HasCustomViewmodel[MAX_ENTITIES];
+new ViewmodelOfWeapon[MAX_ENTITIES];
+new bool:HasCustomWorldmodel[MAX_ENTITIES];
+new WorldmodelOfWeapon[MAX_ENTITIES];
+new bool:HasCustomSounds[MAX_ENTITIES];
 
 new Handle:cvarEnabled;
 new Handle:cvarOnlyInSpawn;
@@ -102,10 +233,10 @@ new weaponcount, plugincount, modelcount;
 
 // TODO: Delete this once the wearables plugin is released!
 // [
-new tiedEntity[2049]; // Entity to tie the wearable to.
-new wearableOwner[2049]; // Who owns this wearable.
-new bool:onlyVisIfActive[2049]; // NOT "visible weapon". If true, this wearable is only shown if the weapon is active.
-new bool:hasWearablesTied[2049]; // If true, this entity has (or did have) at least one wearable tied to it.
+new tiedEntity[MAX_ENTITIES]; // Entity to tie the wearable to.
+new wearableOwner[MAX_ENTITIES]; // Who owns this wearable.
+new bool:onlyVisIfActive[MAX_ENTITIES]; // NOT "visible weapon". If true, this wearable is only shown if the weapon is active.
+new bool:hasWearablesTied[MAX_ENTITIES]; // If true, this entity has (or did have) at least one wearable tied to it.
 
 new bool:g_bSdkStarted = false;
 new Handle:g_hSdkEquipWearable;
@@ -114,8 +245,9 @@ new Handle:g_hSdkEquipWearable;
 public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 {
 	fOnAddAttribute = CreateGlobalForward("CustomWeaponsTF_OnAddAttribute", ET_Event, Param_Cell, Param_Cell, Param_String, Param_String, Param_String);
-	fOnWeaponGive = CreateGlobalForward("CustomWeaponsTF_OnWeaponSpawned", ET_Event, Param_Cell, Param_Cell);
-	
+	fOnWeaponGive = CreateGlobalForward("CustomWeaponsTF_OnWeaponSpawned", ET_Event, Param_Cell, Param_Cell);	   // OnWeaponGive_Post
+	fBeforeWeaponGive = CreateGlobalForward("CustomWeaponsTF_PreWeaponSpawned", ET_Event, Param_Cell, Param_Cell); // OnWeaponGive_Pre
+
 	CreateNative("CusWepsTF_GetClientWeapon", Native_GetClientWeapon);
 	CreateNative("CusWepsTF_GetClientWeaponName", Native_GetClientWeaponName);
 	
@@ -192,6 +324,11 @@ public OnClientPostAdminCheck(client)
 	
 	SDKHook(client, SDKHook_WeaponSwitchPost, OnWeaponSwitch);
 	SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage);
+}
+
+public OnClientDisconnect_Post(iClient)
+{
+    StopMiniGunSounds(iClient);
 }
 
 public OnMapStart()
@@ -2025,6 +2162,30 @@ stock bool:TF2_SdkStartup()
 	return true;
 }
 
+// Hopefully this'll stop it for everyone assuming the first parameter of StopSound means the "emitting" entity
+StopMiniGunSounds(iClient)
+{
+    if (g_szSoundOnSpinUp[iClient][0] != '\0')
+    {
+        StopSound(iClient, SNDCHAN_AUTO, g_szSoundOnSpinUp[iClient]);
+    }
+
+    if (g_szSoundOnSpinDown[iClient][0] != '\0')
+    {
+        StopSound(iClient, SNDCHAN_AUTO, g_szSoundOnSpinDown[iClient]);
+    }
+
+    if (g_szSoundOnHeavyFire[iClient][0] != '\0')
+    {
+        StopSound(iClient, SNDCHAN_AUTO, g_szSoundOnHeavyFire[iClient]);
+    }
+
+    if (g_szSoundOnRev[iClient][0] != '\0')
+    {
+        StopSound(iClient, SNDCHAN_AUTO, g_szSoundOnRev[iClient]);
+    }
+}
+
 // Common stocks from chdata.inc below
 
 /*
@@ -2078,3 +2239,4 @@ stock bool:StrStarts(const String:szStr[], const String:szSubStr[], bool:bCaseSe
 {
 	return !StrContains(szStr, szSubStr, bCaseSensitive);
 }
+
