@@ -33,19 +33,6 @@
 forward Action:CustomWeaponsTF_OnAddAttribute(weapon, client, const String:attrib[], const String:plugin[], const String:value[]);
 
 /**
- * Called before equipped weapon is finished being spawned
- * Before any custom attributes are read and applied to the weapon.
- * Weapon entity does not yet exist at this point
- * Useful for initiating attribute related things before they are set by the plugin.
- *
- * @param iClient            Client index who is equipping this weapon.
- * @param iSlot              This is the slot the weapon is intended to be generated into. Note: If the config for a weapon has an impossible weapon slot (such as 2/Melee for tf_weapon_rocket_launcher), it'll still say 2.
- *
- * @return                  Does nothing.
- */
-forward Action:CustomWeaponsTF_PreWeaponSpawned(iClient, iSlot); // 
-
-/**
  * Called when an equipped weapon is finished being spawned.
  *
  * @param weapon			Entity index of the weapon being equipped.
