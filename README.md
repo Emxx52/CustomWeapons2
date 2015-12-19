@@ -1,7 +1,9 @@
 # Trello
 We now have a Trello board! What's Trello? Trello is a project management platform and it's incredibly useful! Want to check it out? [Click here!](https://trello.com/b/PpC0xGj7/custom-weapons-2). If you want to contribute to the Trello (for example if you're one of the people who has made attribute plugins for CW2), [hit me (404) up](http://www.steamcommunity.com/id/404UNFGaming) on Steam after you've signed up on Trello and give me the email address you signed up with and I'll add you to the board!
 
-# Custom Weapons 2
+# Custom Weapons 2 Dev Branch
+Note: This branch is very glitchy, but has the latest changes. Use at your own risk.
+
 Valve still not adding new weapons to TF2? No problem. Custom Weapons 2 allows you to create your own weapons and let your players use them.
 
 Once you've installed the plugin and some weapons, all players have to do is say /custom, /cus or /c for the list of custom weapons for that class.
