@@ -73,8 +73,10 @@ new bool:IsCustom[2049];
 
 new String:LogName[2049][64]; // Look at this gigantic amount of memory wastage
 //new String:KillIcon[2049][64];
-new String:WeaponName[2049][64];
-new String:WeaponDescription[2049][512];
+new String:WeaponName[MAXPLAYERS + 1][5][64];
+new String:WeaponDescription[MAXPLAYERS + 1][5][512];
+
+new bool:MenuOpen[MAXPLAYERS + 1] = false;
 
 new Handle:ReplacementWeapons[256]; // I don't think people would make more than 256 weapons... And these aren't by entity id, so we don't need 2049.
 
@@ -115,6 +117,8 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 {
 	fOnAddAttribute = CreateGlobalForward("CustomWeaponsTF_OnAddAttribute", ET_Event, Param_Cell, Param_Cell, Param_String, Param_String, Param_String);
 	fOnWeaponGive = CreateGlobalForward("CustomWeaponsTF_OnWeaponSpawned", ET_Event, Param_Cell, Param_Cell);
+	
+	CreateNative("CusWepsTF_AddAttribute", Native_AddAttribute);
 	
 	CreateNative("CusWepsTF_GetClientWeapon", Native_GetClientWeapon);
 	CreateNative("CusWepsTF_GetClientWeaponName", Native_GetClientWeaponName);
@@ -471,6 +475,9 @@ stock CustomMainMenu(client)
 {
 	if (!GetConVarBool(cvarMenu)) return;
 	new Handle:menu = CreateMenu(CustomMainHandler);
+	
+	MenuOpen[client] = true;
+	
 	new counts[5], bool:first = true;
 	new _:class;
 	if (IsPlayerAlive(client)) class = _:TF2_GetPlayerClass(client);
@@ -593,7 +600,14 @@ public CustomMainHandler(Handle:menu, MenuAction:action, client, item)
 		ExplodeString(sel, " ", sIdxs, sizeof(sIdxs), sizeof(sIdxs));
 		WeaponInfoMenu(client, BrowsingClass[client], StringToInt(sIdxs[0]), StringToInt(sIdxs[1]));
 	}
-	else if (action == MenuAction_End) CloseHandle(menu);
+	else if (action == MenuAction_End)
+	{
+		if(IsValidClient(client))
+		{
+			MenuOpen[client] = false;
+		}
+		CloseHandle(menu);
+	}
 }
 
 stock WeaponInfoMenu(client, TFClassType:class, slot, weapon, Float:delay = -1.0)
@@ -659,8 +673,8 @@ stock WeaponInfoMenu(client, TFClassType:class, slot, weapon, Float:delay = -1.0
 	BrowsingSlot[client] = slot;
 	LookingAtItem[client] = weapon;
 	
-	strcopy(WeaponName[client], 64, Name);
-	strcopy(WeaponDescription[client], 512, description);
+	strcopy(WeaponName[client][slot], 64, Name);
+	strcopy(WeaponDescription[client][slot], 512, description);
 }
 public WeaponInfoHandler(Handle:menu, MenuAction:action, client, item)
 {
@@ -938,23 +952,7 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 			KvGetString(hConfig, "plugin", szPlugin, sizeof(szPlugin));
 			KvGetString(hConfig, "value", Value, sizeof(Value));
 			
-			if (!StrEqual(szPlugin, "tf2attributes", false) && !StrEqual(szPlugin, "tf2attributes.int", false) && !StrEqual(szPlugin, "tf2items", false))
-			{
-				new Action:act = Plugin_Continue;
-				Call_StartForward(fOnAddAttribute);
-				Call_PushCell(ent);
-				Call_PushCell(client);
-				Call_PushString(Att);
-				Call_PushString(szPlugin);
-				Call_PushString(Value);
-				Call_Finish(act);
-				if (!act) PrintToServer("[Custom Weapons] WARNING! Attribute \"%s\" (value \"%s\" plugin \"%s\") seems to have been ignored by all attributes plugins. It's either an invalid attribute, incorrect plugin, an error occured in the att. plugin, or the att. plugin forgot to return Plugin_Handled.", Att, Value, szPlugin);
-			}
-			else if (!StrEqual(szPlugin, "tf2items", false))
-			{
-				if (StrEqual(szPlugin, "tf2attributes", false)) TF2Attrib_SetByName(ent, Att, StringToFloat(Value));
-				else TF2Attrib_SetByName(ent, Att, Float:StringToInt(Value));
-			}
+			AddAttribute(ent, client, Att, szPlugin, Value);
 			
 		} while (KvGotoNextKey(hConfig));
 	}
@@ -1192,6 +1190,12 @@ public Action:Event_Resupply(Handle:event, const String:name[], bool:dontBroadca
 	hBotEquipTimer[client] = CreateTimer(GetRandomFloat(0.0, 1.5), Timer_CheckBotEquip, uid, TIMER_FLAG_NO_MAPCHANGE);
 	
 	CreateTimer(0.01, Timer_ReplaceWeapons, client);
+	
+	if(MenuOpen[client])
+	{
+		MenuOpen[client] = false;
+		CancelClientMenu(client);
+	}
 }
 
 public Action:Event_Hurt(Handle:event, const String:name[], bool:dontBroadcast)
@@ -1206,7 +1210,7 @@ bool:GetValueFromConfig(iClient, iSlot, const String:szKey[], String:szValue[], 
 {
 	new iClass = _:TF2_GetPlayerClass(iClient);
 
-	if (SavedWeapons[iClient][iClass][iSlot] == -1 || aItems[iClass][iSlot] == INVALID_HANDLE)
+	if (!IsValidClient(iClient) || iSlot > 4 || SavedWeapons[iClient][iClass][iSlot] == -1 || aItems[iClass][iSlot] == INVALID_HANDLE)
     {
         return false;
     }
@@ -1249,7 +1253,7 @@ DisplayDeathMenu(iKiller, iVictim, TFClassType:iAtkClass, iAtkSlot)
 	}
 
 	new Handle:hMenu = CreateMenu(MenuHandler_Null);
-	SetMenuTitle(hMenu, "%s\n \n%s", WeaponName[iKiller], WeaponDescription[iKiller]);
+	SetMenuTitle(hMenu, "%s\n \n%s", WeaponName[iKiller][iAtkSlot], WeaponDescription[iKiller][iAtkSlot]);
 	AddMenuItem(hMenu, "exit", "Close");
 	SetMenuPagination(hMenu, MENU_NO_PAGINATION);
 	SetMenuExitButton(hMenu, false);
@@ -1266,7 +1270,7 @@ public Action:Event_Death(Handle:event, const String:name[], bool:dontBroadcast)
 
 	new iKiller = GetClientOfUserId(GetEventInt(event, "attacker"));
 
-	if (iKiller && IsClientInGame(iKiller) && g_iTheWeaponSlotIWasLastHitBy[client] != -1) // TODO: Test this vs environmental deaths and whatnot.
+	if (iKiller && IsValidClient(iKiller) && g_iTheWeaponSlotIWasLastHitBy[client] != -1) // TODO: Test this vs environmental deaths and whatnot.
 	{
 		decl String:szWeaponLogClassname[64];
 		GetValueFromConfig(iKiller, g_iTheWeaponSlotIWasLastHitBy[client], "logname", szWeaponLogClassname, sizeof(szWeaponLogClassname));
@@ -1292,8 +1296,11 @@ public Action:Event_Death(Handle:event, const String:name[], bool:dontBroadcast)
 		if (GetEntProp(i, Prop_Send, "m_bDisguiseWearable")) continue;
 		TF2_RemoveWearable(client, i);
 	}
-
-	DisplayDeathMenu(iKiller, client, TF2_GetPlayerClass(iKiller), g_iTheWeaponSlotIWasLastHitBy[client]);
+	
+	if(IsValidClient(iKiller))
+	{
+		DisplayDeathMenu(iKiller, client, TF2_GetPlayerClass(iKiller), g_iTheWeaponSlotIWasLastHitBy[client]);
+	}
 
 	return Plugin_Continue;
 }
@@ -1530,32 +1537,29 @@ public Action:Command_AddAttribute(client, args)
 	for (new i = 0; i < target_count; i++)
 	{
 		new wep = GetPlayerWeaponSlot(target_list[i], slot);
-		if (wep == -1) continue;
-		new Action:act = Plugin_Continue;
-		Call_StartForward(fOnAddAttribute);
-		Call_PushCell(wep);
-		Call_PushCell(target_list[i]);
-		Call_PushString(attribute);
-		Call_PushString(plugin);
-		Call_PushString(value);
-		Call_Finish(act);
-		if (!act)
-		{
-			if(StrEqual(plugin, "tf2attributes"))
-			{
-				TF2Attrib_SetByName(wep, attribute, StringToFloat(value));
-				return Plugin_Handled;
-			}
-			
-			ReplyToCommand(client, "Error: Attribute \"%s\" does not exist in attributes plugin \"%s\".", attribute, plugin);
-			return Plugin_Handled;
-		}
+		//if (wep == -1) continue; AddAttribute checks this so we don't have to here.
+		
+		AddAttribute(wep, target_list[i], attribute, plugin, value);
 	}
 	
 	return Plugin_Handled;
 }
 
 // NATIVES
+
+public Native_AddAttribute(Handle:plugin, args)
+{
+	new weapon = GetNativeCell(1), client = GetNativeCell(2), String:attrib[64], String:atPlugin[64], String:value[PLATFORM_MAX_PATH + 64];
+	
+	GetNativeString(3, attrib, sizeof(attrib));
+	GetNativeString(4, atPlugin, sizeof(atPlugin));
+	GetNativeString(5, value, sizeof(value));
+	
+	if (!NativeCheck_IsClientValid(client)) return false;
+	if (weapon == -1) return false;
+	
+	return bool:AddAttribute(weapon, client, attrib, atPlugin, value);
+}
 
 public Native_GetClientWeapon(Handle:plugin, args)
 {
@@ -1691,6 +1695,34 @@ public Native_FindItemByName(Handle:plugin, args)
 
 // STOCKS
 
+// Code copied from weapon spawning code, better to do this in a stock so we can call it without adding ~30 lines to this file.
+stock Action:AddAttribute(weapon, client, String:attrib[], String:plugin[], String:value[])
+{
+	if(!IsValidClient(client)) return Plugin_Continue;
+	if(weapon == -1) return Plugin_Continue;
+	
+	if(!StrEqual(plugin, "tf2attributes", false) && !StrEqual(plugin, "tf2attributes.int", false) && !StrEqual(plugin, "tf2items", false))
+	{
+		new Action:act = Plugin_Continue;
+		Call_StartForward(fOnAddAttribute);
+		Call_PushCell(weapon);
+		Call_PushCell(client);
+		Call_PushString(attrib);
+		Call_PushString(plugin);
+		Call_PushString(value);
+		Call_Finish(act);
+		if (!act) PrintToServer("[Custom Weapons] WARNING! Attribute \"%s\" (value \"%s\" plugin \"%s\") seems to have been ignored by all attributes plugins. It's either an invalid attribute, incorrect plugin, an error occured in the att. plugin, or the att. plugin forgot to return Plugin_Handled.", attrib, value, plugin);
+		
+		return act;
+	} else if(!StrEqual(plugin, "tf2items", false))
+	{
+		if(StrEqual(plugin, "tf2attributes", false)) TF2Attrib_SetByName(weapon, attrib, StringToFloat(value));
+		else TF2Attrib_SetByName(weapon, attrib, Float:StringToInt(value));
+	}
+	
+	return Plugin_Handled;
+}
+
 stock GetClientSlot(client)
 {
 	if (!IsValidClient(client)) return -1;
@@ -1814,6 +1846,8 @@ stock GetReplacementWeapons()
 // From chdata.inc
 stock GetSlotFromPlayerWeapon(iClient, iWeapon)
 {
+	if(!IsValidClient(iClient)) return -1;
+	
 	for (new i = 0; i <= 5; i++)
 	{
 		if (iWeapon == GetPlayerWeaponSlot(iClient, i))

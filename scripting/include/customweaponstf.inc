@@ -51,6 +51,19 @@ forward Action:CustomWeaponsTF_OnWeaponSpawned(weapon, client);
  // Getting/setting clients' custom weapons.
 
 /**
+ * Adds an attribute to the specified weapon.
+ *
+ * @param client			Client index.
+ * @param weapon				Weapon index.
+ * @param attrib			Name of the attribute that you want requested.
+ * @param plugin			Name of the plugin that you want to equip the attribute from.
+ * @param value				Desired value of the attribute.
+ *
+ * @return					True if the attribute was applied successfully, false otherwise.
+ */
+native bool:CusWepsTF_AddAttribute(weapon, client, const String:attrib[], const String:plugin[], const String:value[]);
+
+/**
  * Returns a Handle to the client's custom weapon KeyValues config in a specific slot.
  * Note three things:
  * 1. Use KvRewind() before using the Handle;
@@ -187,6 +200,8 @@ public SharedPlugin:__pl_customweaponstf =
 #if !defined REQUIRE_PLUGIN
 public __pl_customweaponstf_SetNTVOptional()
 {
+	MarkNativeAsOptional("CusWepsTF_AddAttribute");
+	
 	MarkNativeAsOptional("CusWepsTF_GetClientWeapon");
 	MarkNativeAsOptional("CusWepsTF_GetClientWeaponName");
 	
