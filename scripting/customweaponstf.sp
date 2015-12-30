@@ -966,11 +966,11 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 		if (-1 == StrContains(ModelName, ".mdl", false)) Format(ModelName, sizeof(ModelName), "%s.mdl", ModelName);
 		if (strlen(ModelName) && FileExists(ModelName, true))
 		{
-			new vmModel = PrecacheModel(ModelName, true);
+			/*new vmModel = PrecacheModel(ModelName, true);
 			
-			SetEntProp(ent, Prop_Send, "m_nModelIndex", vmModel);
+			SetEntProp(ent, Prop_Send, "m_nModelIndex", vmModel);*/
 			
-			/*new vm = EquipWearable(client, ModelName, true, ent, true);
+			new vm = EquipWearable(client, ModelName, true, ent, true);
 			if (vm > -1) ViewmodelOfWeapon[vm] = ent;
 			new String:arms[PLATFORM_MAX_PATH];
 			switch (class)
@@ -1004,7 +1004,7 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 				SetEntPropVector(vm, Prop_Send, "m_vecOrigin", offs);
 				SetEntPropVector(vm, Prop_Send, "m_angRotation", angOffs);
 				if (flScale != 1.0) SetEntPropFloat(vm, Prop_Send, "m_flModelScale", flScale);
-			}*/
+			}
 		}
 	}
 	
@@ -1017,15 +1017,15 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 		if (-1 == StrContains(ModelName, ".mdl", false)) Format(ModelName, sizeof(ModelName), "%s.mdl", ModelName);
 		if (strlen(ModelName) && FileExists(ModelName, true))
 		{
-			new model = PrecacheModel(ModelName, true);
-			/*new wr = EquipWearable(client, ModelName, false, ent, true);
+			new wr = EquipWearable(client, ModelName, false, ent, true);
 			if (wr > -1) WorldmodelOfWeapon[wr] = ent;
-			HasCustomWorldmodel[ent] = true;*/
+			HasCustomWorldmodel[ent] = true;
 			
+			/*new model = PrecacheModel(ModelName, true);
 			SetEntProp(ent, Prop_Send, "m_iWorldModelIndex", model);
-			SetEntProp(ent, Prop_Send, "m_nModelIndexOverrides", model, _, 0);
+			SetEntProp(ent, Prop_Send, "m_nModelIndexOverrides", model, _, 0);*/
 			
-			/*new attachment = KvGetNum(hConfig, "attachment", -1);
+			new attachment = KvGetNum(hConfig, "attachment", -1);
 			if (attachment > -1)
 			{
 				SetEntProp(wr, Prop_Send, "m_fEffects", 0);
@@ -1047,7 +1047,7 @@ stock GiveCustomWeapon(client, Handle:hConfig, bool:makeActive = true)
 			else if (replace == 2)
 			{
 				SetEntPropFloat(ent, Prop_Send, "m_flModelScale", 0.0);
-			}*/
+			}
 		}
 	}
 	
